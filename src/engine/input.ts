@@ -32,6 +32,7 @@ export interface KeyContext {
   octave(delta: number): void
   velocityStep(delta: number): void
   record(): void
+  loopRecord?(): void
 }
 
 const typing = (e: KeyboardEvent) => {
@@ -45,6 +46,7 @@ export function attachKeyboard(h: InputHandlers, ctx: () => KeyContext): () => v
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return
     const k = ctx()
     if (e.code === 'Enter') { k.record(); e.preventDefault(); return }
+    if (e.code === 'Backquote') { k.loopRecord?.(); e.preventDefault(); return }
     if (e.code === 'Space') { h.sustain(true, e.timeStamp); e.preventDefault(); return }
     if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { h.bend(e.code === 'ArrowUp' ? 1 : -1, e.timeStamp); e.preventDefault(); return }
     let note: number | null = null

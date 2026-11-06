@@ -4,7 +4,7 @@ import { Midi } from '@tonejs/midi'
 import type { PlayEvent } from './performer'
 
 export interface TakeEvent { t: number; ev: PlayEvent }
-export interface Take { name: string; events: TakeEvent[]; duration: number }
+export interface Take { name: string; events: TakeEvent[]; duration: number; hold?: number } // hold: looper layer tiles' hold (s)
 
 export function takeDuration(events: TakeEvent[]): number {
   return events.length ? events[events.length - 1].t : 0

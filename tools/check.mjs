@@ -286,6 +286,35 @@ try {
     await key('KeyA', 'keyUp')
     return `selector 0: layer gains ${g0}; selector 127: ${g1}`
   })
+  await step('looper: record a layer, it loops as its own tile; a main video plays behind', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id })")
+    await evaluate('window.__vs.setTransport({ bpm: 120, bars: 1, countIn: false, metronome: false, quantize: 4 })')
+    await evaluate('window.__vs.loopRecord()')
+    for (const k of ['KeyA', 'KeyD', 'KeyG']) { await key(k, 'keyDown'); await sleep(180); await key(k, 'keyUp'); await sleep(250) }
+    await sleep(2300) // the 2 s pass closes into layer 1
+    await evaluate('window.__vs.loopRecord()') // stop recording; the layer keeps looping
+    const layers = await S('s.loopLayers.length'), notes = await S('s.loopLayers[0]?.notes.length ?? 0')
+    await evaluate("window.__vs.setMain({ clipId: window.__vs.store.get().clips[1].id, gain: 0.3 })")
+    await sleep(900)
+    const cells = await evaluate("[...new Set(window.__vs.performer.book.sounding(window.__vs.ctx.currentTime).map((v) => v.cell))].join(' ')")
+    await shot('08-looper-main.png')
+    await evaluate('window.__vs.toggleRecord()'); await sleep(2200); await evaluate('window.__vs.toggleRecord()')
+    const take = await S('`${s.take.events.length} events, main ${s.take.events.some((e) => e.ev.type === "main")}, hold ${s.take.hold}`')
+    await evaluate('window.__vs.loopStop(); window.__vs.setMain({ clipId: null })')
+    if (layers !== 1 || notes !== 3 || !/L:1/.test(cells) || !/main/.test(cells)) throw new Error(`layers ${layers}, notes ${notes}, cells ${cells}`)
+    return `1 layer of ${notes} notes; sounding cells: ${cells}; take: ${take}`
+  })
+  await step('export the loop take with its main video (16:9, gallery)', async () => {
+    for (const f of readdirSync(OUT).filter((x) => x.endsWith('.mp4'))) rmSync(join(OUT, f))
+    await evaluate("window.__vs.export({ aspect: '16:9', layout: 'gallery', height: 720, fps: 30 })")
+    await sleep(500)
+    await until('!window.__vs.store.get().exporting', 180000)
+    const f = readdirSync(OUT).find((x) => x.endsWith('.mp4'))
+    if (!f) throw new Error('no MP4 downloaded: ' + (await S('s.message')))
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', '1.2', '-i', join(OUT, f), '-frames:v', '1', join(OUT, '09-loop-export-frame.png')])
+    const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, f)]).toString().trim()
+    return `${f}: ${Number(probe).toFixed(2)} s`
+  })
 } finally {
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({ results, console: logs }, null, 2))
   const failed = results.filter((r) => !r.ok).length

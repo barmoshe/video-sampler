@@ -36,13 +36,22 @@ deploy, `--url` on the check, the demo clip.
 Import time depends on the machine's state: the same 30 s clip took 9.5 s in the evening and
 45-58 s at night locally (load about 3.7), 68.9 s live. Batching holds; the variance is the Mac.
 
+## v3 (in progress, on Bar's "I want a full production ready app")
+
+Design and decisions: `bar_builds/lab/video-sampler/production.md`, ADRs 0770 and 0771; the running
+handoff is `bar_builds/lab/video-sampler/HANDOFF.md`. Landed on `main` (not deployed): tune to the
+nearest note with a home key the keyboard follows; scale lock and chord mode; framed tiles with a pop
+on the hit; a Home grid that fits; a per-voice filter, filter envelope and LFO with picture twins (blur,
+edges, glow, contrast); clip and pad thumbnails; the looper (transport, layers as tiles, undo / redo /
+mute) and a main video behind the tiles; the pack's CC0 sources (`tools/library/`). The pack's 3D
+artwork renders in a separate session into `public/library/`.
+
 ## Open
 
-1. **Bar's call on the live link:** keep it (then deploy the demo clip build to it) or take it
-   down; and whether to git-connect the project (then every push to main is production).
+1. Whether to git-connect the Vercel project (then every push to main is production).
 2. **A hand test** in Bar's Chrome with sound: his keyboard, a real phone clip, an export into
    Instagram / YouTube.
 
 ## Next action
 
-Bar's answer on the live link, then his hand test on it.
+Continue v3 in the order of the handoff's "Next, in order"; then a preview deploy for Bar's hand test.

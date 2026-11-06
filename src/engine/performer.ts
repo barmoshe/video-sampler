@@ -21,9 +21,15 @@ export interface InstrumentState {
   bendRange: number
 }
 
+/**
+ * src: who plays the note (0 = the player's keys, k = looper layer k), so a loop and a held key on the
+ * same note never release each other. cell: the tile the voice draws into (a looper layer keeps one
+ * tile for all its notes, ADR 0771).
+ */
 export type PlayEvent =
-  | { type: 'on'; note: number; vel: number }
-  | { type: 'off'; note: number }
+  | { type: 'on'; note: number; vel: number; src?: number; cell?: string }
+  | { type: 'off'; note: number; src?: number }
+  | { type: 'main'; clipId: string | null; gain: number; offset?: number } // the section's main video behind the tiles, from `offset` s
   | { type: 'sustain'; down: boolean }
   | { type: 'bend'; value: number } // −1..1
   | { type: 'macro'; index: number; value: number }
@@ -55,8 +61,9 @@ export class Performer {
 
   play(ev: PlayEvent, t: number) {
     this.onPlay?.(ev, t)
-    if (ev.type === 'on') this.noteOn(ev.note, ev.vel, t)
-    else if (ev.type === 'off') this.noteOff(ev.note, t)
+    if (ev.type === 'on') this.noteOn(ev.note, ev.vel, t, ev.src ?? 0, ev.cell)
+    else if (ev.type === 'off') this.noteOff(ev.note, t, ev.src ?? 0)
+    else if (ev.type === 'main') this.setMain(ev.clipId, ev.gain, t, ev.offset ?? 0)
     else if (ev.type === 'sustain') this.setSustain(ev.down, t)
     else if (ev.type === 'bend') this.setBend(ev.value * this.state.bendRange, t)
     else if (ev.type === 'macro') this.setMacro(ev.index, ev.value, t)
@@ -79,12 +86,13 @@ export class Performer {
     return Math.max(1, Math.min(128, s.kind === 'clip' ? s.clip.voices : s.kind === 'pads' ? s.pads.voices : s.layers.voices))
   }
 
-  noteOn(note: number, vel: number, t: number) {
-    const { specs, sel } = this.specs(note, vel)
-    if (!specs.length) return
+  noteOn(note: number, vel: number, t: number, src = 0, cell?: string) {
+    const { specs: raw, sel } = this.specs(note, vel)
+    if (!raw.length) return
+    const specs = cell ? raw.map((sp) => ({ ...sp, cell })) : raw
     const evs: EngineEvent[] = []
     const frame = this.sink.frameOf(t)
-    const live = this.book.live(t)
+    const live = this.book.live(t).filter((v) => v.cell !== 'main')
     // cut what this note replaces: retrig (same note), mono groups, choke groups
     for (const sp of specs) {
       for (const v of live) {
@@ -95,9 +103,9 @@ export class Performer {
     }
     // steal past the voice cap: released voices first, then the oldest
     const cap = this.voiceCap()
-    let count = this.book.live(t).length
+    let count = live.length
     while (count + specs.length > cap) {
-      const pool = this.book.live(t)
+      const pool = this.book.live(t).filter((v) => v.cell !== 'main')
       const victim = pool.find((v) => v.off <= t) ?? pool[0]
       if (!victim) break
       this.kill(victim, t, STEAL_MS, evs)
@@ -119,14 +127,16 @@ export class Performer {
         note, filter: sp.filter, lfo: sp.lfo,
       })
     }
-    this.held.set(note, [...(this.held.get(note) ?? []), ...ids])
+    const key = src * 1000 + note
+    this.held.set(key, [...(this.held.get(key) ?? []), ...ids])
     this.sink.send(evs)
   }
 
-  noteOff(note: number, t: number) {
-    const ids = this.held.get(note)
+  noteOff(note: number, t: number, src = 0) {
+    const key = src * 1000 + note
+    const ids = this.held.get(key)
     if (!ids) return
-    this.held.delete(note)
+    this.held.delete(key)
     const evs: EngineEvent[] = []
     for (const id of ids) {
       const v = this.book.voices.find((x) => x.id === id)
@@ -195,9 +205,30 @@ export class Performer {
     if (evs.length) this.sink.send(evs)
   }
 
+  /** The main video: one looping voice in the cell 'main', drawn behind the tiles (ADR 0771). */
+  setMain(clipId: string | null, gain: number, t: number, offset = 0) {
+    const evs: EngineEvent[] = []
+    for (const v of this.book.live(t)) if (v.cell === 'main') this.kill(v, t, CHOKE_MS, evs)
+    const clip = clipId ? this.clips.get(clipId) : undefined
+    if (clip) {
+      const sp: NoteSpec = {
+        clipId: clip.id, cell: 'main', chain: 'main', rate: 1,
+        region: { start: offset % clip.duration, end: clip.duration, loop: true, loopStart: 0, loopEnd: clip.duration },
+        reverse: false, xfade: 0.05, gain, pan: 0, env: { a: 0.01, d: 1, s: 1, r: 0.3 }, choke: 0, gate: true, mono: null,
+      }
+      const v = this.book.add(sp, -1, 100, t)
+      evs.push({
+        kind: 'on', frame: this.sink.frameOf(t), id: v.id, clip: clip.id, rate: 1, start: offset % clip.duration, end: clip.duration, loop: true,
+        loopStart: 0, loopEnd: clip.duration, xfade: 0.05, gain, pan: 0, env: sp.env, note: 60,
+      })
+    }
+    if (evs.length) this.sink.send(evs)
+  }
+
+  /** All notes off. The main video keeps playing (it is not a note); setMain(null) stops it. */
   panic(t: number) {
     const evs: EngineEvent[] = []
-    for (const v of this.book.live(t)) this.kill(v, t, CHOKE_MS, evs)
+    for (const v of this.book.live(t)) if (v.cell !== 'main') this.kill(v, t, CHOKE_MS, evs)
     this.held.clear(); this.sustained.clear(); this.sustain = false
     if (evs.length) this.sink.send(evs)
   }

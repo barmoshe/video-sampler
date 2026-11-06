@@ -78,7 +78,7 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     const raw = new Uint8Array(W * H * 4), rows = new Uint8Array(W * H * 4), stride = W * 4
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
-      d.stage.drawAt(t, t, voices, d.clips, { mode: o.layout, homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps })
+      d.stage.drawAt(t, t, voices, d.clips, { mode: o.layout, homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
       for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
       const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })

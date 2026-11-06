@@ -7,6 +7,7 @@ import { ClipPanel } from './ClipPanel'
 import { ExportDialog } from './ExportDialog'
 import { Keyboard } from './Keyboard'
 import { LayersPanel } from './LayersPanel'
+import { LoopBar } from './LoopBar'
 import { PadsPanel } from './PadsPanel'
 import { SettingsDialog } from './SettingsDialog'
 import { StagePane } from './StagePane'
@@ -60,6 +61,7 @@ export function App() {
         </aside>
       </div>
 
+      <LoopBar />
       {s.kind !== 'pads' ? <Keyboard /> : <div />}
 
       <footer className="status" aria-live="polite">
