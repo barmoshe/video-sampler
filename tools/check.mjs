@@ -42,7 +42,12 @@ let id = 0
 const pending = new Map(), logs = []
 ws.onmessage = (e) => {
   const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { const { ok, fail } = pending.get(m.id); pending.delete(m.id); m.error ? fail(new Error(m.error.message)) : ok(m.result) }
+  if (m.id && pending.has(m.id)) {
+    const { ok, fail } = pending.get(m.id)
+    pending.delete(m.id)
+    if (m.error) fail(new Error(m.error.message))
+    else ok(m.result)
+  }
   if (m.method === 'Runtime.exceptionThrown') logs.push('EXCEPTION ' + (m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text))
   if (m.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(m.params.type)) logs.push(`${m.params.type}: ` + m.params.args.map((a) => a.value ?? a.description).join(' '))
 }
