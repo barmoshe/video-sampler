@@ -326,6 +326,21 @@ try {
     const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, f)]).toString().trim()
     return `${f}: ${Number(probe).toFixed(2)} s`
   })
+  await step('undo an edit; the project saves itself and comes back after a reload', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")
+    await sleep(700)
+    await evaluate('window.__vs.undo()')
+    const after = await S('s.clip.filter.type')
+    await sleep(1800) // the autosave settles a second after the last edit
+    const before = await S('JSON.stringify(s.clips.map((c) => c.id))')
+    const saved = await evaluate("(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('video-sampler'); return JSON.parse(await (await (await d.getFileHandle('project.json')).getFile()).text()).clips.length })()")
+    await evaluate('location.reload()')
+    await sleep(1500)
+    await until(`window.__vs && JSON.stringify(window.__vs.store.get().clips.map((c) => c.id)) === ${JSON.stringify(before)}`, 120000)
+    const back = await S('`${s.clips.length} clips, kind ${s.kind}, ${s.loopLayers.length + s.sections.reduce((n, x) => n + x.layers.length, 0)} looper layers`')
+    if (after !== 'off') throw new Error(`undo left ${after}`)
+    return `undo → filter ${after}; saved ${saved} clips; after reload: ${back}`
+  })
 } finally {
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({ results, console: logs }, null, 2))
   const failed = results.filter((r) => !r.ok).length

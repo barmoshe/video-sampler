@@ -17,6 +17,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <p className="muted" style={{ margin: 0 }}>A key cannot be drawn before you press it. Tight sound plays at once and the picture follows; In sync waits for the picture. Takes and exports are always exact.</p>
       <Seg label="Tiles" value={s.fit ? 'fit' : 'fill'} options={[['fill', 'Fill (crop to the tile)'], ['fit', 'Fit (whole picture)']]} onChange={(v) => app.set('fit', v === 'fit')} />
       <Slider label="Pitch bend range" value={s.bendRange} min={1} max={24} format={(v) => `±${v} st`} onChange={(v) => app.set('bendRange', v)} />
+      <p className="muted" style={{ margin: 0 }}>Your project saves itself in this browser and comes back when you return. Clearing the browser's data removes it.</p>
+      <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => { if (confirm('Start a new, empty project? The saved one is removed from this browser.')) void app.newProject() }}>New project</button>
     </Dialog>
   )
 }

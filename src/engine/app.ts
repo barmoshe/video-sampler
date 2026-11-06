@@ -6,6 +6,8 @@ import {
 } from './instruments'
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
 import { importClip } from './media'
+import { History } from './history'
+import { askToKeep, canPersist, clearProject, loadProject, readClipFile, saveClipFile, saveProject } from './persist'
 import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
 import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesIn, SECTION_IDS, type Layer, type Section, type Transport } from './looper'
 import type { MainPlace } from './performer'
@@ -54,7 +56,17 @@ export interface AppState {
   message: string | null
   voices: number
   audioOn: boolean
+  savedAt: number | null // when the project last saved itself (null: not yet, or storage unavailable)
+  canUndo: boolean
+  canRedo: boolean
 }
+
+/** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
+const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'take'] as const
+/** What autosave keeps: the edits plus the views and settings a reload should come back to. */
+const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode'] as const
+type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
+const pick = <K extends keyof AppState>(s: AppState, keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<AppState, K>
 
 const initial = (): AppState => ({
   clips: [], importing: null, kind: 'clip',
@@ -65,6 +77,7 @@ const initial = (): AppState => ({
   main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' },
   sections: [], section: 'A', queued: null, active: [], recording: false, take: null, playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
+  savedAt: null, canUndo: false, canRedo: false,
 })
 
 export class App {
@@ -86,7 +99,9 @@ export class App {
     const wake = () => { if (this.ctx.state !== 'running') this.ctx.resume().then(() => this.store.set({ audioOn: true })) }
     addEventListener('pointerdown', wake, { capture: true })
     addEventListener('keydown', wake, { capture: true })
-    this.store.subscribe(() => this.syncPerformer())
+    this.store.subscribe(() => this.onChange())
+    this.history.reset()
+    this.lastRefs = SAVE_KEYS.map((k) => this.store.get()[k])
   }
 
   private async boot() {
@@ -96,6 +111,7 @@ export class App {
       frameOf: (t) => Math.round(t * this.ctx.sampleRate),
     })
     this.performer.onPlay = (ev, t) => { if (this.rec && !this.replaying) this.rec.events.push({ t: t - this.rec.start, ev }) }
+    void this.restore()
   }
 
   private instrumentState(): InstrumentState {
@@ -104,9 +120,96 @@ export class App {
   }
   private syncPerformer() { if (this.performer) this.performer.state = this.instrumentState() }
 
+  // ---------- undo, autosave, restore (production.md §3 J) ---------------------------------------
+  history = new History<UndoDoc>(() => pick(this.store.get(), UNDO_KEYS), (d) => this.store.set(d))
+  private clipFiles = new Map<string, string>() // clip id → its file in the browser's storage
+  private restoring = false
+  private saveTimer: ReturnType<typeof setTimeout> | undefined
+  private lastRefs: unknown[] = []
+  private asked = false
+
+  /** Every store change: keep the performer in step; an edit settles into an undo step and a save. */
+  private onChange() {
+    this.syncPerformer()
+    if (this.restoring) return
+    const s = this.store.get()
+    const refs = SAVE_KEYS.map((k) => s[k])
+    if (refs.every((r, i) => r === this.lastRefs[i])) return
+    this.lastRefs = refs
+    this.history.changed()
+    const can = { canUndo: this.history.canUndo, canRedo: this.history.canRedo }
+    if (can.canUndo !== s.canUndo || can.canRedo !== s.canRedo) queueMicrotask(() => this.store.set(can))
+    this.scheduleSave()
+  }
+
+  undo() { if (this.history.undo()) this.store.set({ canUndo: this.history.canUndo, canRedo: this.history.canRedo }) }
+  redo() { if (this.history.redo()) this.store.set({ canUndo: this.history.canUndo, canRedo: this.history.canRedo }) }
+
+  private scheduleSave() {
+    if (!canPersist()) return
+    clearTimeout(this.saveTimer)
+    this.saveTimer = setTimeout(() => void this.save(), 1000)
+  }
+
+  private async save() {
+    const s = this.store.get()
+    if (!s.clips.length && !s.take) return
+    try {
+      await saveProject({ v: 1, savedAt: Date.now(), clips: s.clips.flatMap((c) => (this.clipFiles.has(c.id) ? [{ id: c.id, name: c.name, file: this.clipFiles.get(c.id)! }] : [])), doc: pick(s, SAVE_KEYS) })
+      this.store.set({ savedAt: Date.now() })
+      if (!this.asked) { this.asked = true; void askToKeep() }
+    } catch (e) { console.warn('[autosave]', (e as Error).message) }
+  }
+
+  /** On load: bring back the last project's clips (same ids) and settings. */
+  private async restore() {
+    if (!canPersist()) return
+    const p = await loadProject()
+    if (!p || !p.clips.length) return
+    await this.stageReady
+    this.restoring = true
+    try {
+      for (const c of p.clips) {
+        const f = await readClipFile(c.file, c.name)
+        if (!f) continue
+        this.store.set({ importing: { name: c.name, progress: 0, stage: 'Restoring' } })
+        const { clip, fwd, rev } = await importClip(f, c.name, this.ctx, this.stage!.cache, (q, stage) => this.store.set({ importing: { name: c.name, progress: q, stage: `Restoring · ${stage}` } }), c.id)
+        this.clips.set(clip.id, clip)
+        this.levels.set(clip.id, { fwd, rev })
+        this.clipFiles.set(clip.id, c.file)
+        await this.engine!.loadClip(clip.id, clip.fs, fwd, rev)
+        this.store.set((s) => ({ clips: [...s.clips, clip] }))
+      }
+      const base = initial()
+      const doc = p.doc as Partial<AppState>
+      const merged: Partial<AppState> = {}
+      for (const k of SAVE_KEYS) if (k in doc) (merged as Record<string, unknown>)[k] = { ...(typeof base[k] === 'object' && base[k] && !Array.isArray(base[k]) ? base[k] as object : {}), ...(doc[k] as object) }
+      for (const k of SAVE_KEYS) if (k in doc && (Array.isArray(doc[k]) || typeof doc[k] !== 'object' || doc[k] === null)) (merged as Record<string, unknown>)[k] = doc[k]
+      this.store.set({ ...merged, importing: null, savedAt: p.savedAt })
+      this.say(`Your last project is back (${p.clips.length} clip${p.clips.length === 1 ? '' : 's'}).`)
+    } catch (e) {
+      this.say(`Could not restore the last project: ${(e as Error).message}`)
+    } finally {
+      this.restoring = false
+      this.store.set({ importing: null })
+      this.lastRefs = SAVE_KEYS.map((k) => this.store.get()[k])
+      this.history.reset()
+    }
+  }
+
+  /** A new, empty project: forget the saved one and start over. */
+  async newProject() {
+    await clearProject()
+    location.reload()
+  }
+
   // ---------- stage ------------------------------------------------------------------------------
+  private stageOk!: () => void
+  private stageReady = new Promise<void>((ok) => { this.stageOk = ok })
+
   attachStage(canvas: HTMLCanvasElement) {
     this.stage = new Stage(canvas)
+    this.stageOk()
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop)
       this.drawLive(now)
@@ -192,7 +295,14 @@ export class App {
   }
 
   attachKeyboard() {
-    return attachKeyboard(this.handlers, () => {
+    const undoKeys = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!(e.metaKey || e.ctrlKey) || (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'))) return
+      if (e.code === 'KeyZ') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo() }
+      else if (e.code === 'KeyY') { e.preventDefault(); this.redo() }
+    }
+    addEventListener('keydown', undoKeys)
+    const detach = attachKeyboard(this.handlers, () => {
       const s = this.store.get()
       return {
         mode: s.kind === 'pads' ? 'pads' : 'notes',
@@ -206,6 +316,7 @@ export class App {
         section: (i: number) => { const ids = [this.store.get().section, ...this.store.get().sections.map((x) => x.id)].sort(); if (ids[i]) this.switchSection(ids[i]) },
       }
     })
+    return () => { detach(); removeEventListener('keydown', undoKeys) }
   }
 
   async connectMidi() {
@@ -232,6 +343,7 @@ export class App {
         this.clips.set(clip.id, clip)
         this.levels.set(clip.id, { fwd, rev })
         await this.engine!.loadClip(clip.id, clip.fs, fwd, rev)
+        if (canPersist()) void saveClipFile(f, f.name).then((name) => { this.clipFiles.set(clip.id, name); this.scheduleSave() }).catch((e) => console.warn('[autosave]', e))
         this.store.set((s) => ({ clips: [...s.clips, clip] }))
         this.assign(clip, target)
       } catch (e) {
@@ -273,6 +385,7 @@ export class App {
   }
 
   removeClip(id: string) {
+    this.clipFiles.delete(id)
     this.stage?.cache.free(id)
     this.engine?.unloadClip(id)
     this.clips.delete(id)

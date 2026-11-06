@@ -12,8 +12,8 @@ export interface Imported { clip: Clip; fwd: Float32Array[][]; rev: Float32Array
 
 let seq = 0
 
-export async function importClip(file: Blob, name: string, ctx: BaseAudioContext, cache: FrameCache, onProgress?: (f: number, stage: string) => void): Promise<Imported> {
-  const id = `c${Date.now().toString(36)}${(seq++).toString(36)}`
+export async function importClip(file: Blob, name: string, ctx: BaseAudioContext, cache: FrameCache, onProgress?: (f: number, stage: string) => void, keepId?: string): Promise<Imported> {
+  const id = keepId ?? `c${Date.now().toString(36)}${(seq++).toString(36)}` // a restored clip keeps its id
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS })
   const vt = await input.getPrimaryVideoTrack()
   if (!vt) throw new Error('That file has no video track.')

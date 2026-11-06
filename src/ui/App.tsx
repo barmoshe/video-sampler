@@ -34,6 +34,8 @@ export function App() {
           ))}
         </fieldset>
         <button type="button" className="btn" onClick={() => setDialog('library')} title="The built-in sounds and videos">Library</button>
+        <button type="button" className="btn" disabled={!s.canUndo} onClick={() => app.undo()} title="Undo (⌘Z)">Undo</button>
+        <button type="button" className="btn" disabled={!s.canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)">Redo</button>
         <div className="spacer" />
         <select aria-label="Layout" value={layout} onChange={(e) => app.setLayout(e.target.value as LayoutMode)}>
           {LAYOUTS.filter(([m]) => m !== 'home' || s.kind === 'pads').map(([m, l]) => <option key={m} value={m}>{l}</option>)}
@@ -71,6 +73,7 @@ export function App() {
         <span>{s.kind === 'pads' ? <>pads <b>Z X C V · A S D F · Q W E R · 1 2 3 4</b></> : <>keys <b>A–'</b> · octave <b>Z X</b> {s.octave >= 0 ? `+${s.octave}` : s.octave} · velocity <b>C V</b> {s.velocity}</>}</span>
         <span>sustain <b>Space</b> · bend <b>↑ ↓</b> · record <b>Enter</b></span>
         <span>{s.midiDevices === null ? 'MIDI not connected' : s.midiDevices.length ? `MIDI: ${s.midiDevices.join(', ')}` : 'MIDI: no inputs'}{s.bpm ? ` · clock ${s.bpm} BPM` : ''}</span>
+        {s.savedAt && <span title="Your project saves itself in this browser">saved {new Date(s.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
         {s.take && <span>take <b>{s.take.duration.toFixed(1)} s</b> · <button type="button" className="x" style={{ fontSize: 11 }} onClick={() => app.downloadMidi()}>save .mid</button></span>}
       </footer>
 
