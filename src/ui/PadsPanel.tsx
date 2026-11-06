@@ -71,6 +71,7 @@ export function PadsPanel({ onCamera }: { onCamera: () => void }) {
             <Slider label="Pan" value={sel.pan} min={-1} max={1} step={0.05} format={(v) => (Math.abs(v) < 0.01 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => set({ pan })} />
             <Slider label="Loudness trim" value={sel.trim} min={-12} max={12} step={0.5} format={(v) => `${v.toFixed(1)} dB`} onChange={(trim) => set({ trim })} />
             <Slider label="Release" value={sel.env.r} min={0.03} max={4} step={0.01} format={ms} onChange={(r) => set({ env: { ...sel.env, r } })} />
+            <Check label="Tune to nearest note" checked={sel.tune} onChange={(tune) => set({ tune })} />
             <Check label="Mute" checked={sel.mute} onChange={(mute) => set({ mute })} />
             <Check label="Solo" checked={sel.solo} onChange={(solo) => set({ solo })} />
           </div>

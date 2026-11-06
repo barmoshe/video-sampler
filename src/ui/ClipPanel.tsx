@@ -1,5 +1,5 @@
 import { app } from '../engine/app'
-import { clipRoot, sliceTimes, type ClipParams } from '../engine/instruments'
+import { clipRoot, homeKey, homeSpeed, sliceTimes, type ClipParams, type Tune } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import type { Clip } from '../engine/types'
 import { noteName } from '../engine/voice-math'
@@ -44,8 +44,8 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
         {clip && (
           <p className="muted" style={{ margin: '10px 0 0' }}>
             {clip.rootFound
-              ? <>Sounds at <b style={{ color: '#f2efe6' }}>{noteName(Math.round(clip.root))}</b>{fmtCents(clip.root)}, so C3 plays a real C.</>
-              : 'No clear pitch found: C3 plays it as recorded.'}
+              ? <>Sings <b style={{ color: 'var(--ink)' }}>{noteName(Math.round(clip.root))}</b>{fmtCents(clip.root)}.</>
+              : 'No clear pitch.'}
             {' '}{count(clip.onsets.length, 'hit')}, {count(clip.cuts.length, 'cut')}.
           </p>
         )}
@@ -59,10 +59,6 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
               </div>
               <Slider label="Transpose" value={p.transpose} min={-48} max={48} format={(v) => `${v > 0 ? '+' : ''}${v} st`} onChange={(transpose) => set({ transpose })} />
               <Slider label="Detune" value={p.detune} min={-50} max={50} format={(v) => `${v > 0 ? '+' : ''}${v} c`} onChange={(detune) => set({ detune })} />
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Check label={`In tune (root ${noteName(Math.round(clipRoot(p, clip)))})`} checked={p.rootAuto} onChange={(rootAuto) => set({ rootAuto, root: rootAuto ? p.root : Math.round(clip.root) })} />
-              </div>
-              {!p.rootAuto && <Slider label="Root note" value={p.root} min={0} max={127} format={noteName} onChange={(root) => set({ root })} />}
               <Slider label="Voices" value={p.voices} min={1} max={128} onChange={(voices) => set({ voices })} />
               <div style={{ alignSelf: 'end', display: 'grid', gap: 6 }}>
                 <Check label="Retrig" checked={p.retrig} onChange={(retrig) => set({ retrig })} />
@@ -71,6 +67,13 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
               </div>
             </div>
           </Section>
+          {p.mode !== 'slice' && (
+            <Section title="Tune">
+              <Seg<Tune> label="Tune to" value={p.tune} options={[['nearest', 'Nearest note'], ['original', 'As recorded'], ['manual', 'Manual']]} onChange={(tune) => set({ tune, root: tune === 'manual' ? Math.round(clipRoot(p, clip)) : p.root })} />
+              {p.tune === 'manual' && <Slider label="Root note" value={p.root} min={0} max={127} format={noteName} onChange={(root) => set({ root })} />}
+              <p className="muted" style={{ margin: '10px 0 0' }}>{tuneText(p, clip)}</p>
+            </Section>
+          )}
           <Section title="Region">
             <Region p={p} clip={clip} />
             <div className="grid2" style={{ marginTop: 10 }}>
@@ -123,6 +126,20 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
       )}
     </>
   )
+}
+
+/** What the Tune setting does to this clip, in one sentence. */
+function tuneText(p: ClipParams, clip: Clip): string {
+  const home = noteName(homeKey(p, clip))
+  const sp = homeSpeed(p, clip), pc = Math.abs(sp - 1) * 100
+  const speed = pc < 0.05 ? 'at its recorded speed' : `${pc.toFixed(1)} % ${sp > 1 ? 'faster' : 'slower'} than recorded`
+  if (p.tune === 'nearest') {
+    return clip.rootFound
+      ? `Its home key ${home} plays it exactly in tune, ${speed}. Every other key is in tune too.`
+      : `No clear pitch, so it plays as recorded on ${home}.`
+  }
+  if (p.tune === 'original') return `Plays as recorded on ${home}${clip.rootFound ? `, at its own pitch (${noteName(Math.round(clip.root))}${fmtCents(clip.root)}), so other keys may sound off the note` : ''}.`
+  return `${home} plays it as recorded. Use Detune for cents.`
 }
 
 /** " (+12 c)" when the clip is off the note, nothing when it is on it. */

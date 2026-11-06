@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { app } from '../engine/app'
-import { clipRoot, SLICE_BASE } from '../engine/instruments'
+import { homeKey, SLICE_BASE } from '../engine/instruments'
 import { KEY_LABEL, NOTE_KEYS } from '../engine/input'
 import { useStore } from '../engine/store'
 import { noteName } from '../engine/voice-math'
@@ -31,7 +31,7 @@ export function Keyboard() {
   for (let n = lo; n <= hi; n++) if (!BLACK.has(n % 12)) whites.push(n)
   const ww = width / whites.length
   const clip = clips.find((c) => c.id === clipP.clipId)
-  const root = kind === 'clip' && clip && clipP.mode !== 'slice' ? Math.round(clipRoot(clipP, clip)) : null
+  const root = kind === 'clip' && clip && clipP.mode !== 'slice' ? homeKey(clipP, clip) : null
   const qwerty = new Map(NOTE_KEYS.map((code, i) => [base + i, KEY_LABEL[code]]))
   const sliceMode = kind === 'clip' && clipP.mode === 'slice'
 
@@ -64,6 +64,7 @@ export function Keyboard() {
           onPointerUp={up}
           onPointerCancel={up}
         >
+          {root === n && <span className="home">home</span>}
           {qwerty.has(n) && <span className="qw">{qwerty.get(n)}</span>}
           <span className="nm">{sliceMode ? (n >= SLICE_BASE ? `S${n - SLICE_BASE + 1}` : '') : noteName(n)}</span>
         </button>

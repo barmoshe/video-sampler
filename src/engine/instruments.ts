@@ -10,8 +10,8 @@ export type SliceBy = 'transient' | 'cut' | 'region'
 export interface ClipParams {
   clipId: string | null
   mode: 'classic' | 'oneshot' | 'slice'
-  rootAuto: boolean
-  root: number
+  tune: Tune
+  root: number // the manual root (Tune: manual)
   transpose: number
   detune: number // cents
   start: number; end: number // fractions of the clip
@@ -27,7 +27,7 @@ export interface ClipParams {
   slicePlayback: 'mono' | 'poly' | 'thru'
 }
 export const defaultClipParams = (): ClipParams => ({
-  clipId: null, mode: 'classic', rootAuto: true, root: 60, transpose: 0, detune: 0,
+  clipId: null, mode: 'classic', tune: 'nearest', root: 60, transpose: 0, detune: 0,
   start: 0, end: 1, loop: true, loopStart: 0, loopEnd: 1, xfade: 0.03, voices: 128, retrig: true,
   env: { ...DEFAULT_ENV }, velRange: 40, reverse: false, oneShotPoly: false,
   sliceBy: 'transient', sliceRegions: 16, slicePlayback: 'mono',
@@ -35,8 +35,41 @@ export const defaultClipParams = (): ClipParams => ({
 
 export const SLICE_BASE = 36 // C1
 
+/**
+ * Tune (Bar, 2026-11-06: "tune ... to the nearest note so it will sit correctly in the keyboard").
+ * - nearest: the clip's detected pitch is its root, so its home key (the nearest note) plays it
+ *   exactly in tune, at most 50 cents (2.9 %) off its recorded speed. Bitwig 6.1 "Set Root Key to
+ *   Average Pitch", Logic Quick Sampler "Optimised" (research pass 3).
+ * - original: as recorded, on C3 (Simpler's default, Logic's "Original"), whatever pitch it sings.
+ * - manual: a root note you set, with Detune for cents.
+ */
+export type Tune = 'nearest' | 'original' | 'manual'
+
+/** The fractional MIDI note the clip sounds at when played at rate 1. */
 export function clipRoot(p: ClipParams, clip: Clip): number {
-  return p.rootAuto ? clip.root : p.root
+  if (p.tune === 'manual') return p.root
+  if (p.tune === 'nearest' && clip.rootFound) return clip.root
+  return 60
+}
+
+/** The key that plays the clip in tune at (almost) its recorded speed. */
+export function homeKey(p: ClipParams, clip: Clip): number {
+  return p.mode === 'slice' ? SLICE_BASE : Math.round(clipRoot(p, clip))
+}
+
+/** Picture speed on the home key, 1 = as recorded (transpose and detune aside). */
+export function homeSpeed(p: ClipParams, clip: Clip): number {
+  return Math.pow(2, (Math.round(clipRoot(p, clip)) - clipRoot(p, clip)) / 12)
+}
+
+/** The QWERTY octave that puts a key on the home row (A = C of that octave), within the keyboard's range. */
+export function octaveFor(note: number): number {
+  return Math.max(-5, Math.min(4, Math.floor((note - 60) / 12)))
+}
+
+/** A pad's tuning offset: the cents that move a pitched clip onto the nearest note (0 if unpitched or off). */
+export function padCents(c: { tune: boolean }, clip: Clip): number {
+  return c.tune && clip.rootFound ? clip.root - Math.round(clip.root) : 0
 }
 
 /** Slice start times within [start, end] for the chosen method, at most 92 (C1 to G8). */
@@ -86,12 +119,13 @@ export interface PadChain {
   solo: boolean
   trim: number // dB, from loudness at ingest
   mode: 'oneshot' | 'classic'
+  tune: boolean // nearest note: a pitched clip plays exactly on a note at playNote
   env: Env
 }
 export interface PadsParams { chains: PadChain[]; bank: number; voices: number; selected: number }
 export const PAD_BASE = 36
 export const newPad = (note: number, clipId: string | null = null): PadChain => ({
-  note, clipId, playNote: 60, choke: 0, volume: 0, pan: 0, mute: false, solo: false, trim: 0, mode: 'oneshot',
+  note, clipId, playNote: 60, choke: 0, volume: 0, pan: 0, mute: false, solo: false, trim: 0, mode: 'oneshot', tune: true,
   env: { a: 0.002, d: 1, s: 1, r: 0.05 },
 })
 export const defaultPadsParams = (): PadsParams => ({ chains: [], bank: 0, voices: 128, selected: PAD_BASE })
@@ -104,7 +138,7 @@ export function padsNote(p: PadsParams, clips: Map<string, Clip>, note: number, 
     if (!clip) return []
     const loop = c.mode === 'classic'
     return [{
-      clipId: clip.id, chain: `pad:${c.note}:${i}`, cell: `p:${c.note}`, rate: rate(c.playNote, 60),
+      clipId: clip.id, chain: `pad:${c.note}:${i}`, cell: `p:${c.note}`, rate: rate(c.playNote, 60 + padCents(c, clip)),
       region: { start: 0, end: clip.duration, loop, loopStart: 0, loopEnd: clip.duration },
       reverse: false, xfade: 0.02, gain: velocityGain(vel) * dB(c.volume + c.trim), pan: c.pan, env: c.env,
       choke: c.choke, gate: c.mode === 'classic', mono: null, monoNote: false,

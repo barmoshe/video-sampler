@@ -1,7 +1,7 @@
 // The controller: owns the audio context, engine, performer and stage; React reads its store.
 import { AudioEngine, audibleAt, scheduleTime } from './audio'
 import {
-  defaultClipParams, defaultLayersParams, defaultPadsParams, newLayer, newPad, PAD_BASE,
+  defaultClipParams, defaultLayersParams, defaultPadsParams, homeKey, newLayer, newPad, octaveFor, PAD_BASE,
   type ClipParams, type LayerChain, type LayersParams, type PadChain, type PadsParams,
 } from './instruments'
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
@@ -215,7 +215,7 @@ export class App {
       if (target?.layer) this.setLayer(target.layer, { clipId: clip.id })
       else this.store.set({ layers: { ...s.layers, chains: [...s.layers.chains, newLayer(clip.id)] } })
     } else {
-      this.store.set({ clip: { ...s.clip, clipId: clip.id } })
+      this.setClip({ clipId: clip.id })
     }
   }
 
@@ -233,8 +233,20 @@ export class App {
   }
 
   // ---------- parameters -------------------------------------------------------------------------
-  setKind(kind: InstrumentKind) { this.panic(); this.store.set({ kind }) }
-  setClip(p: Partial<ClipParams>) { this.store.set((s) => ({ clip: { ...s.clip, ...p } })) }
+  setKind(kind: InstrumentKind) { this.panic(); this.store.set({ kind }); if (kind === 'clip') this.followHome() }
+  setClip(p: Partial<ClipParams>) {
+    this.store.set((s) => ({ clip: { ...s.clip, ...p } }))
+    if ('clipId' in p || 'tune' in p || 'root' in p || 'mode' in p) this.followHome()
+  }
+
+  /** The keyboard follows the clip: the QWERTY octave moves so the clip's home key is on the home row. */
+  followHome() {
+    const s = this.store.get()
+    const clip = s.clips.find((c) => c.id === s.clip.clipId)
+    if (s.kind !== 'clip' || !clip) return
+    const octave = octaveFor(homeKey(s.clip, clip))
+    if (octave !== s.octave) this.store.set({ octave })
+  }
   setPads(p: Partial<PadsParams>) { this.store.set((s) => ({ pads: { ...s.pads, ...p } })) }
   setPad(note: number, p: Partial<PadChain>) {
     this.store.set((s) => {
