@@ -88,9 +88,28 @@ try {
     await setFiles([join(MEDIA, 'clip30.mp4')])
     await until('window.__vs.store.get().clips.length === 1', 180000)
     const secs = ((Date.now() - t0) / 1000).toFixed(1)
+    // every cached layer must hold its own frame: read the clip's 16-bit barcode (64 px per bit, top-left)
+    const bad = await evaluate(`(() => {
+      const app = window.__vs, gl = app.stage.gl, cf = app.stage.cache.clips.get(app.store.get().clips[0].id)
+      let bad = 0
+      for (const arr of [cf.S, cf.M].filter(Boolean)) {
+        const fb = gl.createFramebuffer(), px = new Uint8Array(arr.w * 4), sc = arr.w / 1920, y = Math.round(32 * sc)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb)
+        for (let l = 0; l < arr.layers; l++) {
+          gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, arr.tex, 0, l)
+          gl.readPixels(0, y, arr.w, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+          let v = 0
+          for (let k = 0; k < 16; k++) if (px[Math.round((64 * k + 32) * sc) * 4] > 128) v |= 1 << k
+          if (v !== l) bad++
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb)
+      }
+      return bad
+    })()`)
+    if (bad) throw new Error(`${bad} layers hold the wrong frame`)
     await sleep(400)
     await shot('01b-loaded.png')
-    return `${secs} s to load; ` + await S('`${s.clips[0].frames} frames, root ${s.clips[0].root.toFixed(2)}, ${s.clips[0].onsets.length} onsets, ${s.clips[0].cuts.length} cuts, ${s.clips[0].loudness.toFixed(1)} LUFS`')
+    return `${secs} s to load, every layer its own frame; ` + await S('`${s.clips[0].frames} frames, root ${s.clips[0].root.toFixed(2)}, ${s.clips[0].onsets.length} onsets, ${s.clips[0].cuts.length} cuts, ${s.clips[0].loudness.toFixed(1)} LUFS`')
   })
   await step('a phone-style rotated clip (stored sideways, flagged 90°) stands upright', async () => {
     await setFiles([join(MEDIA, 'rot90.mp4')])

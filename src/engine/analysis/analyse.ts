@@ -45,22 +45,54 @@ export function onsets(x: Float32Array, fs: number): number[] {
   const N = 1024, H = 256
   const frames = Math.floor((x.length - N) / H)
   if (frames < 3) return []
-  const flux = new Float64Array(frames)
-  let prev: Float64Array | null = null
+  // log-magnitude spectrogram (λ = 10; λ = 1000 lifted the noise floor to click level)
+  const B = N / 2
+  const mags = new Float32Array(frames * B)
   for (let f = 0; f < frames; f++) {
     const p = power(x, f * H, N)
-    const mag = p.map((v) => Math.log1p(1000 * Math.sqrt(v)))
-    if (prev) { let s = 0; for (let i = 0; i < mag.length; i++) s += Math.max(0, mag[i] - prev[i]); flux[f] = s }
-    prev = mag
+    for (let b = 0; b < B; b++) mags[f * B + b] = Math.log1p(10 * Math.sqrt(p[b]))
   }
+  // each bin's median over the clip is its steady floor (a held tone, codec hiss): flux counts only
+  // what rises above it, so steady sound cancels and changes stand out
+  const floor = new Float32Array(B), col = new Float32Array(frames)
+  for (let b = 0; b < B; b++) {
+    for (let f = 0; f < frames; f++) col[f] = mags[f * B + b]
+    floor[b] = Float32Array.from(col).sort()[frames >> 1]
+  }
+  const flux = new Float64Array(frames)
+  for (let f = 1; f < frames; f++) {
+    let s = 0
+    for (let b = 0; b < B; b++) {
+      const now = Math.max(0, mags[f * B + b] - floor[b]), before = Math.max(0, mags[(f - 1) * B + b] - floor[b])
+      if (now > before) s += now - before
+    }
+    flux[f] = s
+  }
+  // Robust peak picking: flux normalised (below), a local-median threshold + δ, a
+  // local maximum over ±3 frames, 60 ms apart. (A mean-based threshold followed the codec's noise on
+  // a steady tone: 198 "hits" for 30 clicks.)
+  // normalise to the maximum: with sparse hits (10 clicks in 1,870 frames) a 99th percentile lands on
+  // a noise frame and scales the noise up to 1
+  let ref = 0
+  for (const v of flux) ref = Math.max(ref, v)
+  ref = ref || 1
+  // ... and a hit must stand well clear of the clip's typical flux (else a bare tone's noise, scaled
+  // to its own maximum, becomes "hits")
+  const gate = (Float64Array.from(flux).sort()[frames >> 1] * 6) / ref
+  const nf = flux.map((v) => v / ref)
   const out: number[] = []
-  const W = 8, minGap = Math.round((0.06 * fs) / H)
+  const W = 10, P = 3, delta = 0.15, minGap = Math.round((0.06 * fs) / H)
   let last = -minGap
+  const win: number[] = []
   for (let f = 1; f < frames - 1; f++) {
-    let sum = 0, cnt = 0
-    for (let k = Math.max(0, f - W); k <= Math.min(frames - 1, f + W); k++) { sum += flux[k]; cnt++ }
-    const thr = (sum / cnt) * 1.5 + 1
-    if (flux[f] > thr && flux[f] >= flux[f - 1] && flux[f] >= flux[f + 1] && f - last >= minGap) { out.push((f * H) / fs); last = f }
+    win.length = 0
+    for (let k = Math.max(0, f - W); k <= Math.min(frames - 1, f + W); k++) win.push(nf[k])
+    win.sort((a, b) => a - b)
+    const thr = Math.max(win[win.length >> 1] + delta, gate)
+    if (nf[f] <= thr || f - last < minGap) continue
+    let peak = true
+    for (let k = Math.max(0, f - P); k <= Math.min(frames - 1, f + P); k++) if (nf[k] > nf[f]) { peak = false; break }
+    if (peak) { out.push((f * H + N / 2) / fs); last = f } // the window's centre
   }
   return out
 }

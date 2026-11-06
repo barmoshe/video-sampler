@@ -44,9 +44,9 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
         {clip && (
           <p className="muted" style={{ margin: '10px 0 0' }}>
             {clip.rootFound
-              ? <>Sounds at <b style={{ color: '#f2efe6' }}>{noteName(Math.round(clip.root))}</b> {fmtCents(clip.root)}, so C3 plays a real C.</>
+              ? <>Sounds at <b style={{ color: '#f2efe6' }}>{noteName(Math.round(clip.root))}</b>{fmtCents(clip.root)}, so C3 plays a real C.</>
               : 'No clear pitch found: C3 plays it as recorded.'}
-            {' '}{clip.onsets.length} hits, {clip.cuts.length} cuts.
+            {' '}{count(clip.onsets.length, 'hit')}, {count(clip.cuts.length, 'cut')}.
           </p>
         )}
       </Section>
@@ -125,7 +125,10 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
   )
 }
 
+/** " (+12 c)" when the clip is off the note, nothing when it is on it. */
 function fmtCents(midi: number) {
   const c = Math.round((midi - Math.round(midi)) * 100)
-  return c ? `(${c > 0 ? '+' : ''}${c} c)` : ''
+  return c ? ` (${c > 0 ? '+' : ''}${c} c)` : ''
 }
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`

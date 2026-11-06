@@ -69,6 +69,15 @@ export class FrameCache {
     gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, arr.w, arr.h, 1, gl.RGBA, gl.UNSIGNED_BYTE, src)
   }
 
+  /** `count` layers from one tall image (frames stacked top to bottom): one call instead of `count`. */
+  uploadStack(arr: TexArray, first: number, count: number, src: TexImageSource) {
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, arr.tex)
+    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, arr.h)
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, first, arr.w, arr.h, count, gl.RGBA, gl.UNSIGNED_BYTE, src)
+    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0)
+  }
+
   /**
    * Tiny thumbnails of every layer (for scene cuts and the poster colour), blitted on the GPU 64 at
    * a time and read back once per batch. Reading back each frame during ingest stalled the GPU 900

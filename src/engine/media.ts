@@ -54,10 +54,31 @@ export async function importClip(file: Blob, name: string, ctx: BaseAudioContext
   const storedAspect = stored % 180 ? height / width : width / height
   const cf = cache.allocate(id, frames, fps, storedAspect, stored)
   const arrs = [cf.S, ...(cf.M ? [cf.M] : [])]
-  // spike test 1's path: resize with createImageBitmap, several frames in flight, upload, close at once
+  // Resize with createImageBitmap (several frames in flight), stack 30 frames into one tall canvas
+  // per tier, and upload each stack with ONE texSubImage3D (WebGL2 slices a tall image into layers).
+  // A call per layer cost 32-48 ms on the 06/11 evening machine; a call per 30 layers, 2 ms a frame.
+  const B = 30
+  type Batch = { canvases: OffscreenCanvas[]; ctxs: OffscreenCanvasRenderingContext2D[]; size: number; filled: number }
+  const batches = new Map<number, Batch>()
+  const flush = (b: number, bt: Batch) => {
+    bt.canvases.forEach((c, k) => cache.uploadStack(arrs[k], b * B, bt.size, c))
+    batches.delete(b)
+  }
+  const place = (layer: number, bms: ImageBitmap[]) => {
+    const b = Math.floor(layer / B)
+    let bt = batches.get(b)
+    if (!bt) {
+      const size = Math.min(B, frames - b * B)
+      const canvases = arrs.map((a) => new OffscreenCanvas(a.w, a.h * size))
+      bt = { canvases, ctxs: canvases.map((c) => c.getContext('2d')!), size, filled: 0 }
+      batches.set(b, bt)
+    }
+    bms.forEach((bm, k) => { bt!.ctxs[k].drawImage(bm, 0, (layer - b * B) * arrs[k].h); bm.close() })
+    if (++bt.filled === bt.size) flush(b, bt)
+  }
   const pending = new Set<Promise<void>>()
   let n = 0
-  const tm = { wait: 0, bitmap: 0, upload: 0 }
+  const tm = { wait: 0, bitmap: 0 }
   let tw = performance.now()
   for await (const sample of sink.samples(0, duration)) {
     tm.wait += performance.now() - tw
@@ -70,9 +91,8 @@ export async function importClip(file: Blob, name: string, ctx: BaseAudioContext
       const t0 = performance.now()
       const bms = await Promise.all(arrs.map((a) => createImageBitmap(frame, { resizeWidth: a.w, resizeHeight: a.h, resizeQuality: 'medium' })))
       frame.close()
-      const t1 = performance.now()
-      bms.forEach((bm, k) => { cache.upload(arrs[k], layer, bm); bm.close() })
-      tm.bitmap += t1 - t0; tm.upload += performance.now() - t1
+      tm.bitmap += performance.now() - t0
+      place(layer, bms)
     })()
     pending.add(job)
     void job.finally(() => pending.delete(job))
@@ -81,7 +101,8 @@ export async function importClip(file: Blob, name: string, ctx: BaseAudioContext
     tw = performance.now()
   }
   await Promise.all(pending)
-  console.info(`[ingest timing] frames ${n}: decoder wait ${tm.wait.toFixed(0)} ms, bitmaps ${tm.bitmap.toFixed(0)} ms, uploads ${tm.upload.toFixed(0)} ms`)
+  for (const [b, bt] of batches) flush(b, bt) // a stack the decoder left short (a dropped frame)
+  console.info(`[ingest timing] frames ${n}: decoder wait ${tm.wait.toFixed(0)} ms, bitmaps ${tm.bitmap.toFixed(0)} ms`)
   // scene cuts and the poster colour from GPU thumbnails, read back in batches
   const thumbs = cache.thumbnails(cf.S)
   const T = 32 * 18 * 4
