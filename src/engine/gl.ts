@@ -28,7 +28,7 @@ export function tierSize(aspect: number, area: number): [number, number] {
   return [w, Math.max(16, Math.round(w / aspect / 4) * 4)]
 }
 
-export interface ClipFrames { S: TexArray; M: TexArray | null; frames: number; fps: number; aspect: number; poster: number }
+export interface ClipFrames { S: TexArray; M: TexArray | null; frames: number; fps: number; aspect: number; poster: number; rotation: 0 | 90 | 180 | 270 }
 
 /** Per-clip texture arrays under one GPU budget (math §11). */
 export class FrameCache {
@@ -44,7 +44,8 @@ export class FrameCache {
     return b
   }
 
-  allocate(id: string, frames: number, fps: number, aspect: number): ClipFrames {
+  /** `aspect` and the tiers are in stored (coded) orientation; `rotation` turns them for display. */
+  allocate(id: string, frames: number, fps: number, aspect: number, rotation: 0 | 90 | 180 | 270 = 0): ClipFrames {
     this.free(id)
     const maxLayers = this.gl.getParameter(this.gl.MAX_ARRAY_TEXTURE_LAYERS) as number
     const layers = Math.min(frames, maxLayers)
@@ -57,7 +58,7 @@ export class FrameCache {
     // M only while it fits its budget (spike: 445 MB per 30 s, so long clips stay S-only)
     const [mw, mh] = tierSize(aspect, 480 * 270)
     const M = this.used('M') + mw * mh * 4 * layers <= this.budgetM ? createArray(this.gl, mw, mh, layers) : null
-    const c: ClipFrames = { S, M, frames: layers, fps, aspect, poster: Math.floor(layers / 2) }
+    const c: ClipFrames = { S, M, frames: layers, fps, aspect, poster: Math.floor(layers / 2), rotation }
     this.clips.set(id, c)
     return c
   }
@@ -66,6 +67,37 @@ export class FrameCache {
     const gl = this.gl
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, arr.tex)
     gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, arr.w, arr.h, 1, gl.RGBA, gl.UNSIGNED_BYTE, src)
+  }
+
+  /**
+   * Tiny thumbnails of every layer (for scene cuts and the poster colour), blitted on the GPU 64 at
+   * a time and read back once per batch. Reading back each frame during ingest stalled the GPU 900
+   * times and made a 30 s clip take minutes.
+   */
+  thumbnails(arr: TexArray, tw = 32, th = 18): Uint8Array {
+    const gl = this.gl, batch = 64
+    const rb = gl.createRenderbuffer()
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb)
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, tw, th * batch)
+    const dst = gl.createFramebuffer(), src = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dst)
+    gl.framebufferRenderbuffer(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb)
+    const out = new Uint8Array(arr.layers * tw * th * 4)
+    for (let b = 0; b < arr.layers; b += batch) {
+      const n = Math.min(batch, arr.layers - b)
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dst)
+      for (let k = 0; k < n; k++) {
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, src)
+        gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, arr.tex, 0, b + k)
+        gl.blitFramebuffer(0, 0, arr.w, arr.h, 0, k * th, tw, (k + 1) * th, gl.COLOR_BUFFER_BIT, gl.LINEAR)
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, dst)
+      gl.readPixels(0, 0, tw, th * n, gl.RGBA, gl.UNSIGNED_BYTE, out.subarray(b * tw * th * 4, (b + n) * tw * th * 4))
+    }
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null)
+    gl.deleteFramebuffer(src); gl.deleteFramebuffer(dst); gl.deleteRenderbuffer(rb)
+    return out
   }
 
   free(id: string) {
@@ -80,14 +112,16 @@ export class FrameCache {
 const VS = `#version 300 es
 layout(location=0) in vec2 corner;
 layout(location=1) in vec4 rect;   // x, y, w, h in pixels, origin top-left
-layout(location=2) in vec4 voice;  // q (source frame), W (shutter in frames), alpha, unused
-layout(location=3) in vec4 crop;   // u0, v0, u1, v1
+layout(location=2) in vec4 voice;  // q (source frame), W (shutter in frames), alpha, rotation (0..3 quarter turns clockwise)
+layout(location=3) in vec4 crop;   // u0, v0, u1, v1, in display orientation
 uniform vec2 stage;
 out vec2 uv; flat out vec3 s;
 void main() {
   vec2 p = rect.xy + corner * rect.zw;
   gl_Position = vec4(p.x / stage.x * 2.0 - 1.0, 1.0 - p.y / stage.y * 2.0, 0.0, 1.0);
-  uv = mix(crop.xy, crop.zw, corner);
+  vec2 d = mix(crop.xy, crop.zw, corner);           // display-space uv
+  int r = int(voice.w + 0.5);                        // stored frame shown turned r quarter turns clockwise
+  uv = r == 1 ? vec2(d.y, 1.0 - d.x) : r == 2 ? vec2(1.0 - d.x, 1.0 - d.y) : r == 3 ? vec2(1.0 - d.y, d.x) : d;
   s = voice.xyz;
 }`
 
@@ -122,7 +156,7 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   return sh
 }
 
-export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number] }
+export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number]; rot?: number }
 export type Blend = 'normal' | 'screen' | 'add'
 
 const STRIDE = 12
@@ -178,7 +212,7 @@ export class Collage {
     if (!n) return
     for (let i = 0; i < n; i++) {
       const t = tiles[i], o = i * STRIDE
-      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, 0, ...t.crop], o)
+      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, t.rot ?? 0, ...t.crop], o)
     }
     gl.viewport(0, 0, width, height)
     gl.enable(gl.BLEND)

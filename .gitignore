@@ -27,3 +27,6 @@ dist-ssr
 .vercel
 
 .fold
+
+# check output
+tools/out/

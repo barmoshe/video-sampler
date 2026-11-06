@@ -72,10 +72,16 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     await audio.add(buffer)
     const frames = Math.ceil(seconds * o.fps)
     const voices = performer.book.voices
+    const gl = d.stage.gl
+    // A canvas-backed frame carries the canvas's sRGB tag whatever we ask (the spike's QC FAIL), so
+    // read the pixels back and build the frame from them with an explicit BT.709 colour space.
+    const raw = new Uint8Array(W * H * 4), rows = new Uint8Array(W * H * 4), stride = W * 4
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
       d.stage.drawAt(t, t, voices, d.clips, { mode: o.layout, homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps })
-      const sample = new VideoSample(canvas, { timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
+      for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
+      const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })
       await video.add(sample)
       sample.close()
       if (k % 15 === 0) progress(0.1 + (0.88 * k) / frames, 'Picture')

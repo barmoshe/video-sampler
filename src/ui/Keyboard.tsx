@@ -1,0 +1,84 @@
+import { useEffect, useRef, useState } from 'react'
+import { app } from '../engine/app'
+import { clipRoot, SLICE_BASE } from '../engine/instruments'
+import { KEY_LABEL, NOTE_KEYS } from '../engine/input'
+import { useStore } from '../engine/store'
+import { noteName } from '../engine/voice-math'
+
+const BLACK = new Set([1, 3, 6, 8, 10])
+
+/** Three octaves around the computer-keyboard octave; click or touch to play, letters show the keys. */
+export function Keyboard() {
+  const el = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(1000)
+  const octave = useStore(app.store, (s) => s.octave)
+  const active = useStore(app.store, (s) => s.active)
+  const kind = useStore(app.store, (s) => s.kind)
+  const clipP = useStore(app.store, (s) => s.clip)
+  const clips = useStore(app.store, (s) => s.clips)
+  const velocity = useStore(app.store, (s) => s.velocity)
+  const pointer = useRef(new Map<number, number>())
+
+  useEffect(() => {
+    const ro = new ResizeObserver(() => setWidth(el.current?.clientWidth ?? 1000))
+    ro.observe(el.current!)
+    return () => ro.disconnect()
+  }, [])
+
+  const base = 60 + 12 * octave
+  const lo = base - 12, hi = base + 23
+  const whites = [] as number[]
+  for (let n = lo; n <= hi; n++) if (!BLACK.has(n % 12)) whites.push(n)
+  const ww = width / whites.length
+  const clip = clips.find((c) => c.id === clipP.clipId)
+  const root = kind === 'clip' && clip && clipP.mode !== 'slice' ? Math.round(clipRoot(clipP, clip)) : null
+  const qwerty = new Map(NOTE_KEYS.map((code, i) => [base + i, KEY_LABEL[code]]))
+  const sliceMode = kind === 'clip' && clipP.mode === 'slice'
+
+  const down = (e: React.PointerEvent, note: number) => {
+    e.preventDefault()
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    pointer.current.set(e.pointerId, note)
+    app.handlers.noteOn(note, velocity, performance.now(), 'keys')
+  }
+  const up = (e: React.PointerEvent) => {
+    const n = pointer.current.get(e.pointerId)
+    if (n === undefined) return
+    pointer.current.delete(e.pointerId)
+    app.handlers.noteOff(n, performance.now())
+  }
+
+  // positions first: white keys in a row, black keys over the gaps
+  const layout = positions(lo, hi, ww)
+  return (
+    <div className="keys" ref={el}>
+      {layout.map(({ n, x, w, black }) => (
+        <button
+          type="button"
+          key={n}
+          tabIndex={-1}
+          aria-label={`Play ${noteName(n)}`}
+          className={`key ${black ? 'b' : 'w'} ${active.includes(n) ? 'on' : ''} ${root === n ? 'root' : ''}`}
+          style={{ left: x, width: w }}
+          onPointerDown={(e) => down(e, n)}
+          onPointerUp={up}
+          onPointerCancel={up}
+        >
+          {qwerty.has(n) && <span className="qw">{qwerty.get(n)}</span>}
+          <span className="nm">{sliceMode ? (n >= SLICE_BASE ? `S${n - SLICE_BASE + 1}` : '') : noteName(n)}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function positions(lo: number, hi: number, ww: number) {
+  const out: { n: number; x: number; w: number; black: boolean }[] = []
+  let wi = 0
+  for (let n = lo; n <= hi; n++) {
+    const black = BLACK.has(n % 12)
+    out.push({ n, black, x: black ? wi * ww - ww * 0.32 : wi * ww, w: black ? ww * 0.64 : ww })
+    if (!black) wi++
+  }
+  return out
+}

@@ -75,7 +75,8 @@ export class Stage {
       if (!r || !h.clipId || (c && c.pieces.length)) continue
       const cf = this.cache.clips.get(h.clipId)
       if (!cf) continue
-      push(cf.S, { ...inset(r), q: cf.poster, W: 0, alpha: 0.22, crop: o.fit ? [0, 0, 1, 1] : fillCrop(cf.aspect, r.w / r.h) })
+      const shown = cf.rotation % 180 ? 1 / cf.aspect : cf.aspect
+      push(cf.S, { ...inset(r), q: cf.poster, W: 0, alpha: 0.22, crop: o.fit ? [0, 0, 1, 1] : fillCrop(shown, r.w / r.h), rot: cf.rotation / 90 })
     }
     for (const [key, c] of cells) {
       const r = rects.get(key)
@@ -84,7 +85,7 @@ export class Stage {
         const cf = this.cache.clips.get(p.clip.id)
         if (!cf) continue
         const arr = cf.M && r.w > 300 ? cf.M : cf.S
-        push(arr, { ...(o.mode === 'home' || o.mode === 'gallery' ? inset(r) : r), q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, r.w / r.h) })
+        push(arr, { ...(o.mode === 'home' || o.mode === 'gallery' ? inset(r) : r), q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, r.w / r.h), rot: cf.rotation / 90 })
       }
     }
     const blend: Blend = o.mode === 'stack' ? 'screen' : 'normal'
