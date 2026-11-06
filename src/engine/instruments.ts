@@ -6,7 +6,7 @@ import { DEFAULT_ENV, DEFAULT_FILTER, DEFAULT_LFO, rate, velocityGain, type Env,
 export const dB = (x: number) => Math.pow(10, x / 20)
 
 // ---------- Clip ---------------------------------------------------------------------------------
-export type SliceBy = 'transient' | 'cut' | 'region'
+export type SliceBy = 'transient' | 'cut' | 'region' | 'manual'
 export interface ClipParams {
   clipId: string | null
   mode: 'classic' | 'oneshot' | 'slice'
@@ -23,6 +23,7 @@ export interface ClipParams {
   reverse: boolean
   oneShotPoly: boolean
   sliceBy: SliceBy
+  slices: number[] // manual slices (seconds), added in the sample editor; they join the computed ones (Bitwig 6.1)
   sliceRegions: number
   slicePlayback: 'mono' | 'poly' | 'thru'
   filter: FilterSpec
@@ -38,7 +39,7 @@ export const defaultClipParams = (): ClipParams => ({
   clipId: null, mode: 'classic', tune: 'nearest', root: 60, transpose: 0, detune: 0,
   start: 0, end: 1, loop: true, loopStart: 0, loopEnd: 1, xfade: 0.03, voices: 128, retrig: true,
   env: { ...DEFAULT_ENV }, velRange: 40, reverse: false, oneShotPoly: false,
-  sliceBy: 'transient', sliceRegions: 16, slicePlayback: 'mono',
+  sliceBy: 'transient', slices: [], sliceRegions: 16, slicePlayback: 'mono',
   filter: { ...DEFAULT_FILTER, env: { ...DEFAULT_FILTER.env } }, lfo: { ...DEFAULT_LFO }, sends: noSends(),
 })
 
@@ -94,7 +95,11 @@ export function sliceTimes(p: ClipParams, clip: Clip): number[] {
   const s = p.start * clip.duration, e = p.end * clip.duration
   let pts: number[]
   if (p.sliceBy === 'region') pts = Array.from({ length: p.sliceRegions }, (_, i) => s + ((e - s) * i) / p.sliceRegions)
+  else if (p.sliceBy === 'manual') pts = [s]
   else pts = [s, ...(p.sliceBy === 'cut' ? clip.cuts : clip.onsets).filter((t) => t > s + 0.03 && t < e - 0.03)]
+  // manual slices join the computed ones; two slices closer than 20 ms are one
+  pts = [...pts, ...(p.slices ?? []).filter((t) => t > s + 0.01 && t < e - 0.01)].sort((a, b) => a - b)
+  pts = pts.filter((t, i) => i === 0 || t - pts[i - 1] > 0.02)
   return pts.slice(0, 127 - SLICE_BASE + 1)
 }
 

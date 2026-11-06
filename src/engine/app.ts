@@ -14,6 +14,10 @@ import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesI
 import type { MainPlace } from './performer'
 
 export interface MainState { clipId: string | null; gain: number; alpha: number; place: MainPlace }
+/** Pads performance modes: note repeat at a rate in beats with swing (MPC, Push), and 16 Levels (velocity). */
+export interface PadPlay { repeat: boolean; rate: number; swing: number; levels: boolean }
+/** 16 Levels: pad i of the block plays the selected pad at this velocity (soft bottom-left to hard top-right). */
+export const levelVelocity = (i: number) => Math.round(8 + (i * 119) / 15)
 import { Performer, type InstrumentState, type PlayEvent } from './performer'
 import { Stage } from './stage'
 import { createStore } from './store'
@@ -41,6 +45,7 @@ export interface AppState {
   loopRec: boolean // live playing is being recorded into layers, one per pass
   bar: number // the current bar (for the UI), −1 during the count-in
   fx: FxSettings // the effects bus's returns and glue
+  padPlay: PadPlay // Pads performance modes (Push / MPC): note repeat, 16 Levels
   main: MainState // the current section's main video
   sections: Section<MainState, LayoutMode>[] // the other sections' state (the current one lives in loopLayers, main, layouts)
   section: string // the current section
@@ -69,7 +74,7 @@ export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx,
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
 const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
-const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode'] as const
+const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
 const pick = <K extends keyof AppState>(s: AppState, keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<AppState, K>
 
@@ -80,6 +85,7 @@ const initial = (): AppState => ({
   octave: 0, scale: defaultScale(), velocity: 100,
   transport: defaultTransport(), loopLayers: [], redoLayers: [], looping: false, loopRec: false, bar: 0,
   main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' }, fx: defaultFx(),
+  padPlay: { repeat: false, rate: 0.25, swing: 0, levels: false },
   sections: [], section: 'A', queued: null, active: [], recording: false, take: null, playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
   savedAt: null, canUndo: false, canRedo: false,
@@ -265,11 +271,15 @@ export class App {
   private held = new Map<number, number>()
 
   handlers: InputHandlers = {
-    noteOn: (key, vel, ts) => {
+    noteOn: (key, vel0, ts) => {
       const s = this.store.get()
       const melodic = s.kind !== 'pads'
-      const root = melodic && s.scale.lock ? snap(key, s.scale) : key
-      const notes = melodic ? chordNotes(root, s.scale) : [key]
+      // 16 Levels: the block plays the selected pad at sixteen velocities
+      const lvl = !melodic && s.padPlay.levels ? key - this.bankBase() : -1
+      const vel = lvl >= 0 && lvl < 16 ? levelVelocity(lvl) : vel0
+      const played = lvl >= 0 && lvl < 16 ? s.pads.selected : key
+      const root = melodic && s.scale.lock ? snap(key, s.scale) : played
+      const notes = melodic ? chordNotes(root, s.scale) : [played]
       if (this.chords.has(key)) this.handlers.noteOff(key, ts) // a retrigger releases the old chord first
       this.chords.set(key, notes)
       if (this.recorder) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recorder.on(n, vel, at) }
@@ -278,8 +288,10 @@ export class App {
         this.play({ type: 'on', note: n, vel }, ts)
       }
       this.store.set((x) => ({ active: [...x.active.filter((n) => !notes.includes(n)), ...notes] }))
+      if (!melodic && s.padPlay.repeat) this.startRepeat(key, notes, vel)
     },
     noteOff: (key, ts) => {
+      this.repeaters.delete(key)
       const notes = this.chords.get(key) ?? [key]
       this.chords.delete(key)
       if (this.recorder) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recorder.off(n, at) }
@@ -616,6 +628,54 @@ export class App {
       if (target.main.clipId && (s.looping || s.main.clipId)) this.startMain(target.main.clipId, at, true)
       else if (!target.main.clipId) this.stopMain(at)
     }
+  }
+
+  // ---------- pads: note repeat, 16 Levels, multi-drop, swap and layer ---------------------------
+  private repeaters = new Map<number, { notes: number[]; vel: number; next: number; k: number }>()
+  private repeatTimer = 0
+
+  setPadPlay(p: Partial<PadPlay>) { this.store.set((s) => ({ padPlay: { ...s.padPlay, ...p } })); if (p.repeat === false) this.repeaters.clear() }
+
+  /** Note repeat: while a pad is held it retriggers on the grid (the loop's, if it runs), with swing. */
+  private startRepeat(key: number, notes: number[], vel: number) {
+    const s = this.store.get(), step = (s.padPlay.rate * 60) / s.transport.bpm, now = this.ctx.currentTime
+    const first = s.looping ? this.loopT0 + Math.ceil((now + 0.01 - this.loopT0) / step) * step : now + step
+    this.repeaters.set(key, { notes, vel, next: first, k: 1 })
+    if (!this.repeatTimer) this.repeatTimer = window.setInterval(() => this.repeatTick(), 10)
+  }
+
+  private repeatTick() {
+    if (!this.repeaters.size) { clearInterval(this.repeatTimer); this.repeatTimer = 0; return }
+    const s = this.store.get(), step = (s.padPlay.rate * 60) / s.transport.bpm, horizon = this.ctx.currentTime + 0.08
+    for (const r of this.repeaters.values()) {
+      while (r.next < horizon) {
+        const len = Math.min(step * 0.9, 0.15)
+        for (const n of r.notes) {
+          this.performer!.play({ type: 'on', note: n, vel: r.vel, src: 50 }, r.next)
+          this.performer!.play({ type: 'off', note: n, src: 50 }, r.next + len)
+          this.recorder?.on(n, r.vel, r.next); this.recorder?.off(n, r.next + len)
+        }
+        r.next += step * (r.k % 2 ? 1 + s.padPlay.swing : 1 - s.padPlay.swing) // swing pushes every second hit late
+        r.k++
+      }
+    }
+  }
+
+  /** Several clips dropped on a pad fill it and the pads after it (Ableton maps them upward). */
+  async importToPads(files: File[], first: number) {
+    for (let i = 0; i < files.length && first + i <= 127; i++) await this.importFiles([files[i]], { pad: first + i })
+  }
+
+  /** Drag a pad onto another: they swap places, sound and picture (Drum Rack). */
+  swapPads(a: number, b: number) {
+    if (a === b) return
+    this.store.set((s) => ({ pads: { ...s.pads, chains: s.pads.chains.map((c) => (c.note === a ? { ...c, note: b } : c.note === b ? { ...c, note: a } : c)), selected: b } }))
+  }
+
+  /** Alt-drag a pad onto another: its clips join that pad, which then plays both (a layered pad). */
+  layerPad(from: number, to: number) {
+    if (from === to) return
+    this.store.set((s) => ({ pads: { ...s.pads, chains: [...s.pads.chains, ...s.pads.chains.filter((c) => c.note === from).map((c) => ({ ...c, note: to }))], selected: to } }))
   }
 
   // ---------- takes ------------------------------------------------------------------------------

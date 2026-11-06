@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { app } from '../engine/app'
+import { app, levelVelocity } from '../engine/app'
 import { PAD_BASE, type PadChain } from '../engine/instruments'
 import { PAD_LABEL } from '../engine/input'
 import { useStore } from '../engine/store'
@@ -13,6 +13,7 @@ export function PadsPanel({ onCamera }: { onCamera: () => void }) {
   const clips = useStore(app.store, (s) => s.clips)
   const active = useStore(app.store, (s) => s.active)
   const velocity = useStore(app.store, (s) => s.velocity)
+  const play = useStore(app.store, (s) => s.padPlay)
   const file = useRef<HTMLInputElement>(null)
   const base = PAD_BASE + pads.bank * 16
   const sel = pads.chains.find((c) => c.note === pads.selected)
@@ -29,28 +30,54 @@ export function PadsPanel({ onCamera }: { onCamera: () => void }) {
         <div className="padgrid">
           {order.map((i) => {
             const note = base + i
-            const ch = pads.chains.find((c) => c.note === note)
-            const clip = clips.find((c) => c.id === ch?.clipId)
+            const chs = pads.chains.filter((c) => c.note === note && c.clipId)
+            const shown = play.levels ? pads.chains.find((c) => c.note === pads.selected) : chs[0]
+            const clip = clips.find((c) => c.id === shown?.clipId)
+            const playable = play.levels ? !!clip : chs.length > 0
             return (
               <button
                 key={note}
                 type="button"
-                className={`pad ${active.includes(note) ? 'on' : ''}`}
-                aria-pressed={pads.selected === note}
-                aria-label={`Pad ${noteName(note)}${clip ? `, ${clip.name}` : ', empty'}`}
-                onPointerDown={() => { app.setPads({ selected: note }); if (clip) app.handlers.noteOn(note, velocity, performance.now(), 'keys') }}
-                onPointerUp={() => clip && app.handlers.noteOff(note, performance.now())}
+                className={`pad ${active.includes(play.levels ? pads.selected : note) && !play.levels ? 'on' : ''}`}
+                aria-pressed={!play.levels && pads.selected === note}
+                aria-label={play.levels ? `Velocity ${levelVelocity(i)}` : `Pad ${noteName(note)}${clip ? `, ${clip.name}${chs.length > 1 ? `, ${chs.length} layers` : ''}` : ', empty'}`}
+                draggable={!play.levels && chs.length > 0}
+                onDragStart={(e) => e.dataTransfer.setData('text/x-pad', String(note))}
+                onPointerDown={() => { if (!play.levels) app.setPads({ selected: note }); if (playable) app.handlers.noteOn(note, velocity, performance.now(), 'keys') }}
+                onPointerUp={() => playable && app.handlers.noteOff(note, performance.now())}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files.length) void app.importFiles([...e.dataTransfer.files].slice(0, 1), { pad: note }) }}
+                onDrop={(e) => {
+                  e.preventDefault(); e.stopPropagation()
+                  const from = e.dataTransfer.getData('text/x-pad')
+                  if (from) { if (e.altKey) app.layerPad(Number(from), note); else app.swapPads(Number(from), note); return }
+                  if (e.dataTransfer.files.length) void app.importToPads([...e.dataTransfer.files], note)
+                }}
               >
-                {clip && <span className="fill" style={{ background: `${rgb(clip.poster)} url(${clip.thumb}) center / cover` }} />}
+                {clip && <span className="fill" style={{ background: `${rgb(clip.poster)} url(${clip.thumb}) center / cover`, opacity: play.levels ? 0.25 + (0.75 * i) / 15 : undefined }} />}
                 <span>{PAD_LABEL[i]}</span>
-                <span>{clip ? clip.name.slice(0, 9) : noteName(note)}</span>
+                <span>{play.levels ? `vel ${levelVelocity(i)}` : clip ? `${clip.name.slice(0, chs.length > 1 ? 6 : 9)}${chs.length > 1 ? ` ×${chs.length}` : ''}` : noteName(note)}</span>
               </button>
             )
           })}
         </div>
-        <p className="muted" style={{ margin: '10px 0 0' }}>Drop a video on a pad, or select a pad and add a clip. Keys Z X C V are the bottom row.</p>
+        <p className="muted" style={{ margin: '10px 0 0' }}>Drop videos on a pad (several fill the pads after it). Drag a pad onto another to swap them; hold Alt to layer it there. Keys Z X C V are the bottom row.</p>
+      </Section>
+      <Section title="Play">
+        <div className="grid2">
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Check label="Note repeat" checked={play.repeat} onChange={(repeat) => app.setPadPlay({ repeat })} />
+            <Check label="16 Levels (velocity)" checked={play.levels} onChange={(levels) => app.setPadPlay({ levels })} />
+          </div>
+          {play.repeat && (
+            <>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Seg<string> label="Rate" value={String(play.rate)} options={[['1', '1/4'], ['0.5', '1/8'], ['0.3333333333333333', '1/8 T'], ['0.25', '1/16'], ['0.16666666666666666', '1/16 T'], ['0.125', '1/32']]} onChange={(v) => app.setPadPlay({ rate: Number(v) })} />
+              </div>
+              <Slider label="Swing" value={play.swing} min={0} max={0.5} step={0.01} def={0} format={(v) => `${Math.round(50 + v * 50)} %`} onChange={(swing) => app.setPadPlay({ swing })} />
+            </>
+          )}
+        </div>
+        <p className="muted" style={{ margin: '10px 0 0' }}>{play.repeat ? 'Hold a pad: it repeats on the tempo grid, and its tile stutters with it.' : play.levels ? 'The block plays the selected pad, soft at the bottom left to hard at the top right.' : 'Note repeat and 16 Levels, as on Push and the MPC.'}</p>
       </Section>
 
       <Section title={`Pad ${noteName(pads.selected)}`}>

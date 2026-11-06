@@ -76,7 +76,10 @@ const setFiles = async (paths) => {
   await page('DOM.setFileInputFiles', { nodeId, files: paths })
 }
 const results = []
+const oi = process.argv.indexOf('--only') // --only "import a clip,sample editor": run just the steps whose names contain these
+const ONLY = oi > 0 ? process.argv[oi + 1].split(',').map((x) => x.trim()) : null
 const step = async (name, fn) => {
+  if (ONLY && !ONLY.some((o) => name.includes(o))) return
   try { const note = await fn(); results.push({ name, ok: true, note }); console.log(`PASS ${name}${note ? `  (${note})` : ''}`) }
   catch (e) { results.push({ name, ok: false, note: String(e.message ?? e) }); console.log(`FAIL ${name}  ${e.message ?? e}`) }
 }
@@ -337,6 +340,39 @@ try {
     await evaluate('window.__vs.setClip({ sends: { delay: 0, reverb: 0 } })')
     if (cells < 1 || level < -50) throw new Error(`cells ${cells}, level ${level.toFixed(1)} dB`)
     return `mix ${level.toFixed(1)} dBFS while playing; ${cells} tile still on stage 0.5 s after release (echoes and glow)`
+  })
+  await step('sample editor: drag the start handle, double-click a manual slice', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id, mode: 'classic', start: 0, end: 1, slices: [] })")
+    await sleep(300)
+    const r = await evaluate("(() => { const c = document.querySelector('.sampler-ed canvas'); c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })()")
+    await sleep(200)
+    const mouse = (type, x, clickCount = 1) => page('Input.dispatchMouseEvent', { type, x, y: r.y + r.h / 2, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount })
+    const under = await evaluate(`(() => { const e = document.elementFromPoint(${r.x + 2}, ${r.y + r.h / 2}); window.__ev = { down: 0, move: 0, up: 0 }; const c = document.querySelector('.sampler-ed canvas'); for (const k of ['down', 'move', 'up']) c.addEventListener('pointer' + k, () => window.__ev[k]++); return e ? e.tagName + '.' + e.className : 'nothing' })()`)
+    await mouse('mouseMoved', r.x + 1); await mouse('mousePressed', r.x + 1)
+    for (const f of [0.1, 0.2, 0.25]) await mouse('mouseMoved', r.x + r.w * f)
+    await mouse('mouseReleased', r.x + r.w * 0.25)
+    const start = await S('s.clip.start')
+    await evaluate("window.__vs.setClip({ mode: 'slice', sliceBy: 'manual', start: 0 })")
+    await sleep(300)
+    await mouse('mousePressed', r.x + r.w * 0.5, 1); await mouse('mouseReleased', r.x + r.w * 0.5, 1)
+    await mouse('mousePressed', r.x + r.w * 0.5, 2); await mouse('mouseReleased', r.x + r.w * 0.5, 2)
+    await sleep(200)
+    const slices = await S('s.clip.slices.map((t) => t.toFixed(1)).join(",")')
+    await shot('10b-sample-editor.png')
+    await evaluate("window.__vs.setClip({ mode: 'classic', sliceBy: 'transient', slices: [], start: 0 })")
+    if (Math.abs(start - 0.25) > 0.03 || !slices) throw new Error(`start ${start}, slices ${slices}, under the cursor ${under}, canvas ${JSON.stringify(r)}, events ${JSON.stringify(await evaluate('window.__ev'))}`)
+    return `start dragged to ${start.toFixed(2)}; a manual slice at ${slices} s`
+  })
+  await step('the Instrument look in light and dark (screenshots at 1470×832)', async () => {
+    await evaluate("window.__vs.setKind('clip')")
+    for (const mode of ['light', 'dark']) {
+      await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] })
+      await sleep(400)
+      await shot(`11-${mode}.png`)
+    }
+    const bg = await evaluate("getComputedStyle(document.body).backgroundColor")
+    await page('Emulation.setEmulatedMedia', { features: [] })
+    return `light and dark captured; body in dark ${bg}`
   })
   await step('undo an edit; the project saves itself and comes back after a reload', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")

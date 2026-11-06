@@ -3,7 +3,7 @@
 // analysed in a worker. Clips are capped at 60 s in v1.
 import { ALL_FORMATS, BlobSource, Input, VideoSampleSink } from 'mediabunny'
 import { cuts } from './analysis/analyse'
-import type { FrameCache } from './gl'
+import type { ClipFrames, FrameCache } from './gl'
 import type { Clip } from './types'
 
 export const MAX_SECONDS = 60
@@ -114,11 +114,12 @@ export async function importClip(file: Blob, name: string, ctx: BaseAudioContext
   }
   const poster = dominant(thumbs.subarray(cf.poster * T, (cf.poster + 1) * T))
   const thumb = await posterImage(cache.readLayer(cf.S, cf.poster), cf.S.w, cf.S.h, cf.rotation)
+  const strip = await filmstrip(cache, cf, 16)
   onProgress?.(0.97, 'Tuning')
   const { fwd, rev, analysis } = await analysed
   const clip: Clip = {
     id, name, duration, fs: audio.fs, channels: fwd[0], fps, frames, width, height, aspect,
-    root: analysis.root, rootFound: analysis.rootFound, poster, thumb, onsets: analysis.onsets, cuts: cuts(diff, fps), loudness: analysis.loudness,
+    root: analysis.root, rootFound: analysis.rootFound, poster, thumb, strip, onsets: analysis.onsets, cuts: cuts(diff, fps), loudness: analysis.loudness,
   }
   onProgress?.(1, 'Ready')
   return { clip, fwd, rev }
@@ -157,4 +158,24 @@ async function posterImage(px: Uint8ClampedArray, w: number, h: number, rotation
   g.rotate((rotation * Math.PI) / 180)
   g.drawImage(src, -w / 2, -h / 2)
   return URL.createObjectURL(await out.convertToBlob({ type: 'image/jpeg', quality: 0.82 }))
+}
+
+/** n frames across the clip side by side, upright, as one JPEG (the sample editor's filmstrip). */
+async function filmstrip(cache: FrameCache, cf: ClipFrames, n: number): Promise<string> {
+  const side = cf.rotation % 180 !== 0
+  const fw = side ? cf.S.h : cf.S.w, fh = side ? cf.S.w : cf.S.h
+  const cell = 96, ch = Math.round((cell * fh) / fw)
+  const out = new OffscreenCanvas(cell * n, ch), g = out.getContext('2d')!
+  const src = new OffscreenCanvas(cf.S.w, cf.S.h), sg = src.getContext('2d')!
+  for (let k = 0; k < n; k++) {
+    const layer = Math.min(cf.S.layers - 1, Math.round(((k + 0.5) / n) * cf.S.layers))
+    sg.putImageData(new ImageData(cache.readLayer(cf.S, layer) as Uint8ClampedArray<ArrayBuffer>, cf.S.w, cf.S.h), 0, 0)
+    g.save()
+    g.translate(k * cell + cell / 2, ch / 2)
+    g.rotate((cf.rotation * Math.PI) / 180)
+    const sw = side ? ch : cell, sh = side ? cell : ch
+    g.drawImage(src, -sw / 2, -sh / 2, sw, sh)
+    g.restore()
+  }
+  return URL.createObjectURL(await out.convertToBlob({ type: 'image/jpeg', quality: 0.78 }))
 }

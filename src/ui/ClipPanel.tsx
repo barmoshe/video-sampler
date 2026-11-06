@@ -4,6 +4,7 @@ import { useStore } from '../engine/store'
 import type { Clip } from '../engine/types'
 import { noteName, type FilterSpec, type FilterType, type LfoShape, type LfoSpec } from '../engine/voice-math'
 import { Check, Section, Seg, Slider } from './controls'
+import { SampleEditor } from './SampleEditor'
 import { ms, pct, rgb } from './format'
 
 export function ClipList({ selected, onPick }: { selected: string | null; onPick: (id: string) => void }) {
@@ -22,16 +23,6 @@ export function ClipList({ selected, onPick }: { selected: string | null; onPick
   )
 }
 
-function Region({ p, clip }: { p: ClipParams; clip: Clip }) {
-  const slices = p.mode === 'slice' ? sliceTimes(p, clip) : []
-  return (
-    <div className="region" aria-hidden="true">
-      <i style={{ left: pct(p.start), width: pct(p.end - p.start), background: '#2b2b30' }} />
-      {p.mode === 'classic' && p.loop && <i style={{ left: pct(p.loopStart), width: pct(Math.max(0, p.loopEnd - p.loopStart)), background: 'rgba(111,174,242,.35)', borderLeft: '1px solid #6faef2', borderRight: '1px solid #6faef2' }} />}
-      {slices.map((t, i) => <i key={i} style={{ left: pct(t / clip.duration), width: 1, background: '#f2621b' }} />)}
-    </div>
-  )
-}
 
 export function ClipPanel({ onCamera }: { onCamera: () => void }) {
   const p = useStore(app.store, (s) => s.clip)
@@ -75,7 +66,7 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
             </Section>
           )}
           <Section title="Region">
-            <Region p={p} clip={clip} />
+            <SampleEditor p={p} clip={clip} />
             <div className="grid2" style={{ marginTop: 10 }}>
               <Slider kind="slider" label="Start" value={p.start} min={0} max={0.99} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(start) => set({ start: Math.min(start, p.end - 0.01) })} />
               <Slider kind="slider" label="End" value={p.end} min={0.01} max={1} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(end) => set({ end: Math.max(end, p.start + 0.01) })} />
@@ -94,7 +85,7 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
               {p.mode === 'slice' && (
                 <>
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <Seg label="Slice by" value={p.sliceBy} options={[['transient', 'Transient'], ['cut', 'Cut'], ['region', 'Equal']]} onChange={(sliceBy) => set({ sliceBy })} />
+                    <Seg label="Slice by" value={p.sliceBy} options={[['transient', 'Transient'], ['cut', 'Cut'], ['region', 'Equal'], ['manual', 'Manual']]} onChange={(sliceBy) => set({ sliceBy })} />
                   </div>
                   {p.sliceBy === 'region' && <Slider label="Slices" value={p.sliceRegions} min={2} max={64} onChange={(sliceRegions) => set({ sliceRegions })} />}
                   <div style={{ gridColumn: '1 / -1' }}>

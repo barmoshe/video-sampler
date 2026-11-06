@@ -16,6 +16,7 @@ export interface Clip {
   rootFound: boolean
   poster: [number, number, number] // dominant colour, 0..1
   thumb: string // poster frame as an image URL (object URL), shown upright
+  strip: string // a filmstrip of 16 frames across the clip (object URL), for the sample editor
   onsets: number[] // seconds
   cuts: number[] // seconds (scene changes)
   loudness: number // integrated LUFS (approx)
