@@ -12,7 +12,7 @@ import type { Take } from './take'
 import type { Clip, LayoutMode, StageAspect } from './types'
 import type { EngineEvent } from './worklet/voice-engine'
 
-export interface ExportOptions { aspect: StageAspect; layout: LayoutMode; height: 720 | 1080; fps: 30 | 60 }
+export interface ExportOptions { aspect: StageAspect; layout: LayoutMode; height: 720 | 1080; fps: 30 | 60; followSections?: boolean }
 
 export const SIZES: Record<StageAspect, [number, number]> = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1] }
 
@@ -76,9 +76,13 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     // A canvas-backed frame carries the canvas's sRGB tag whatever we ask (the spike's QC FAIL), so
     // read the pixels back and build the frame from them with an explicit BT.709 colour space.
     const raw = new Uint8Array(W * H * 4), rows = new Uint8Array(W * H * 4), stride = W * 4
+    // sections' layout cues (ADR 0771), followed unless the export picks one layout for all
+    const cues = take.events.flatMap((e) => (e.ev.type === 'layout' ? [{ t: LEAD + e.t, mode: e.ev.mode, section: e.ev.section }] : []))
+    const cueAt = (t: number) => { let c: (typeof cues)[number] | undefined; for (const x of cues) if (x.t <= t) c = x; return c }
+    const modeAt = (t: number) => (o.followSections === false ? o.layout : cueAt(t)?.mode ?? o.layout)
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
-      d.stage.drawAt(t, t, voices, d.clips, { mode: o.layout, homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
+      d.stage.drawAt(t, t, voices, d.clips, { section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
       for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
       const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })

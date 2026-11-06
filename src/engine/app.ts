@@ -7,7 +7,10 @@ import {
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
 import { importClip } from './media'
 import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
-import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, notesIn, type Layer, type Transport } from './looper'
+import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesIn, SECTION_IDS, type Layer, type Section, type Transport } from './looper'
+import type { MainPlace } from './performer'
+
+export interface MainState { clipId: string | null; gain: number; alpha: number; place: MainPlace }
 import { Performer, type InstrumentState, type PlayEvent } from './performer'
 import { Stage } from './stage'
 import { createStore } from './store'
@@ -34,7 +37,10 @@ export interface AppState {
   looping: boolean // the transport runs (loops play, the metronome clicks)
   loopRec: boolean // live playing is being recorded into layers, one per pass
   bar: number // the current bar (for the UI), −1 during the count-in
-  main: { clipId: string | null; gain: number; alpha: number } // the main video behind the tiles
+  main: MainState // the current section's main video
+  sections: Section<MainState, LayoutMode>[] // the other sections' state (the current one lives in loopLayers, main, layouts)
+  section: string // the current section
+  queued: string | null // the section that starts on the next bar
   velocity: number
   active: number[]
   recording: boolean
@@ -56,7 +62,8 @@ const initial = (): AppState => ({
   layouts: { clip: 'gallery', pads: 'home', layers: 'gallery' }, aspect: '16:9', fit: false,
   octave: 0, scale: defaultScale(), velocity: 100,
   transport: defaultTransport(), loopLayers: [], redoLayers: [], looping: false, loopRec: false, bar: 0,
-  main: { clipId: null, gain: 0.7, alpha: 1 }, active: [], recording: false, take: null, playing: false,
+  main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' },
+  sections: [], section: 'A', queued: null, active: [], recording: false, take: null, playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
 })
 
@@ -117,7 +124,7 @@ export class App {
     const t = audibleAt(this.ctx, now) + 1 / 60 + s.pictureOffsetMs / 1000
     const n = this.stage.drawAt(t, now / 1000, this.performer.book.voices, this.clips, {
       mode: s.layouts[s.kind], fit: s.fit, homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(),
-      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha,
+      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section,
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
     if (Math.random() < 0.02) this.performer.book.prune(this.ctx.currentTime)
@@ -196,6 +203,7 @@ export class App {
         velocityStep: (d) => this.store.set((x) => ({ velocity: Math.max(1, Math.min(127, x.velocity + d)) })),
         record: () => this.toggleRecord(),
         loopRecord: () => this.loopRecord(),
+        section: (i: number) => { const ids = [this.store.get().section, ...this.store.get().sections.map((x) => x.id)].sort(); if (ids[i]) this.switchSection(ids[i]) },
       }
     })
   }
@@ -380,15 +388,18 @@ export class App {
   /** Every 25 ms: schedule the next 150 ms of loop notes and clicks on the audio clock. */
   private loopTick() {
     const s = this.store.get(), tr = s.transport, now = this.ctx.currentTime
-    const from = this.scheduledTo, to = now + 0.15
+    const from = this.scheduledTo
+    const switchAt = s.queued ? nextBar(Math.max(from, now), this.loopT0, tr) : Infinity
+    const to = Math.min(now + 0.15, switchAt)
     for (const x of notesIn(s.loopLayers, this.loopT0, tr, Math.max(from, this.loopT0), to)) {
-      const src = 100 + x.layer, cell = `L:${x.layer}`
+      const src = 100 + x.layer, cell = `L:${s.section}:${x.layer}`
       this.performer!.play({ type: 'on', note: x.n.note, vel: x.n.vel, src, cell }, x.on)
       this.performer!.play({ type: 'off', note: x.n.note, src }, x.off)
     }
     const countIn = this.loopT0 - (60 / tr.bpm) * tr.beats
     if (tr.metronome || now < this.loopT0) for (const c of clicksIn(Math.min(countIn, this.loopT0), tr, Math.max(from, countIn), to)) this.click(c.t, c.accent)
     this.scheduledTo = to
+    if (s.queued && to >= switchAt) { this.applySection(s.queued, switchAt); return }
     // a recording pass ends at the loop boundary: its notes become a layer, the next pass records anew
     const L = loopSeconds(tr), pass = Math.floor((now - this.loopT0) / L)
     if (this.recorder && pass > this.recPass) {
@@ -422,21 +433,66 @@ export class App {
     const before = this.store.get().main
     this.store.set((s) => ({ main: { ...s.main, ...p } }))
     const m = this.store.get().main
-    if ('clipId' in p || ('gain' in p && m.gain !== before.gain)) {
+    if ('clipId' in p || 'place' in p || ('gain' in p && m.gain !== before.gain)) {
       if (m.clipId) this.startMain(m.clipId, this.ctx.currentTime + 0.05)
       else this.stopMain()
     }
   }
-  private startMain(clipId: string, at: number) {
+  private startMain(clipId: string, at: number, fromStart = false) {
     const clip = this.clips.get(clipId)
     if (!clip || !this.performer) return
-    const offset = this.mainOn && this.mainOn.clipId === clipId ? (at - this.mainOn.at) % clip.duration : 0
-    this.performer.play({ type: 'main', clipId, gain: this.store.get().main.gain, offset }, at)
+    const offset = !fromStart && this.mainOn && this.mainOn.clipId === clipId ? (at - this.mainOn.at) % clip.duration : 0
+    const m = this.store.get().main
+    this.performer.play({ type: 'main', clipId, gain: m.gain, offset, place: m.place }, at)
     this.mainOn = { clipId, at: at - offset }
   }
-  private stopMain() {
-    this.performer?.play({ type: 'main', clipId: null, gain: 0 }, this.ctx.currentTime)
+  private stopMain(at = this.ctx.currentTime) {
+    this.performer?.play({ type: 'main', clipId: null, gain: 0 }, at)
     this.mainOn = null
+  }
+
+  /** Go to a section: on the next bar while the loops run, at once otherwise. */
+  switchSection(id: string) {
+    const s = this.store.get()
+    if (id === s.section) { if (s.queued) this.store.set({ queued: null }); return }
+    if (!s.sections.some((x) => x.id === id)) return
+    if (s.looping) this.store.set({ queued: id })
+    else this.applySection(id, this.ctx.currentTime)
+  }
+
+  /** A new empty section after the last, with the current main video and layout; switch to it. */
+  addSection() {
+    const s = this.store.get()
+    const used = new Set([s.section, ...s.sections.map((x) => x.id)])
+    const id = SECTION_IDS.find((x) => !used.has(x))
+    if (!id) return
+    this.store.set({ sections: [...s.sections, { id, layers: [], main: { ...s.main }, layout: s.layouts[s.kind] }] })
+    this.switchSection(id)
+  }
+
+  /** The switch itself, at audio time `at`: save the current section, load the next, re-anchor the loop. */
+  private applySection(id: string, at: number) {
+    const s = this.store.get()
+    const target = s.sections.find((x) => x.id === id)
+    if (!target) return
+    if (this.recorder) { this.closeLayer(at); this.recorder = null }
+    const current: Section<MainState, LayoutMode> = { id: s.section, layers: this.store.get().loopLayers, main: s.main, layout: s.layouts[s.kind] }
+    const layout = target.layout ?? s.layouts[s.kind]
+    this.store.set({
+      sections: [...s.sections.filter((x) => x.id !== id), current].sort((a, b) => a.id.localeCompare(b.id)),
+      section: id, queued: null, loopLayers: target.layers, redoLayers: [], main: target.main,
+      layouts: { ...s.layouts, [s.kind]: layout },
+    })
+    if (s.looping) {
+      this.loopT0 = at // the new section's loops start from their first bar
+      this.scheduledTo = at
+      if (s.loopRec) { this.recPass = 0; this.recorder = new LayerRecorder(at, this.store.get().transport) }
+    }
+    this.performer?.play({ type: 'layout', mode: layout, section: id }, at) // a cue the take keeps for the export
+    if (target.main.clipId !== s.main.clipId || target.main.place !== s.main.place) {
+      if (target.main.clipId && (s.looping || s.main.clipId)) this.startMain(target.main.clipId, at, true)
+      else if (!target.main.clipId) this.stopMain(at)
+    }
   }
 
   // ---------- takes ------------------------------------------------------------------------------
@@ -444,7 +500,7 @@ export class App {
     if (this.rec) {
       const events = this.rec.events.filter((e) => e.t >= 0)
       // a take over loops or a main video keeps its own timeline (the bed starts at 0)
-      const first = events.some((e) => e.ev.type === 'main') ? 0 : events.find((e) => e.ev.type === 'on')?.t ?? 0
+      const first = events.some((e) => e.ev.type === 'main' || e.ev.type === 'layout') ? 0 : events.find((e) => e.ev.type === 'on')?.t ?? 0
       const shifted = events.map((e) => ({ t: Math.max(0, e.t - first), ev: e.ev }))
       this.rec = null
       const hold = this.store.get().looping ? loopSeconds(this.store.get().transport) : undefined
@@ -454,8 +510,9 @@ export class App {
       this.rec = { start: this.ctx.currentTime, events: [] }
       if (this.mainOn) { // the bed is already playing: the take starts it where it is now
         const clip = this.clips.get(this.mainOn.clipId)
-        if (clip) this.rec.events.push({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.store.get().main.gain, offset: (this.ctx.currentTime - this.mainOn.at) % clip.duration } })
+        if (clip) this.rec.events.push({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.store.get().main.gain, offset: (this.ctx.currentTime - this.mainOn.at) % clip.duration, place: this.store.get().main.place } })
       }
+      if (this.store.get().sections.length) this.rec.events.push({ t: 0, ev: { type: 'layout', mode: this.store.get().layouts[this.store.get().kind], section: this.store.get().section } })
       this.store.set({ recording: true })
     }
   }

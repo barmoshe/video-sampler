@@ -16,6 +16,7 @@ export interface DrawOptions {
   displayFps?: number
   look?: Look
   hold?: number // seconds a looper layer's tile stays (its last frame) after its last note: the loop length
+  section?: string // the current section: other sections' layer tiles are not held
   mainAlpha?: number // the main video behind the tiles (ADR 0771)
 }
 
@@ -78,7 +79,7 @@ export class Stage {
       const alpha = shown(opacity(gainAt(v, t)))
       if (alpha <= 0.002) continue
       const r = rateAt(v, t)
-      const order = v.cell.startsWith('L:') ? 1000 + Number(v.cell.slice(2)) : o.mode === 'home' ? Number(v.cell.split(':')[1]) - (o.homeBase ?? 36) : v.note
+      const order = v.cell.startsWith('L:') ? 1000 + Number(v.cell.split(':').at(-1)) : o.mode === 'home' ? Number(v.cell.split(':')[1]) - (o.homeBase ?? 36) : v.note
       if (o.mode === 'home' && (order < 0 || order > 15)) continue // another bank
       const c = cells.get(v.cell) ?? { order, weight: 0, born: v.on, pieces: [] }
       c.weight = Math.max(c.weight, alpha)
@@ -91,28 +92,36 @@ export class Stage {
     for (const [key, c] of cells) if (key.startsWith('L:') && c.pieces[0]) this.held.set(key, { clipId: c.pieces[0].clip.id, q: c.pieces[0].q, seen: t, order: c.order })
     const hold = o.hold ?? 0
     for (const [key, h] of this.held) {
-      if (t - h.seen > hold) { this.held.delete(key); continue }
+      if (t - h.seen > hold || (o.section && !key.startsWith(`L:${o.section}:`))) { this.held.delete(key); continue }
       if (!cells.has(key)) cells.set(key, { order: h.order, weight: 0.001, born: 0, pieces: [] })
     }
     const cellList: CellIn[] = [...cells].map(([key, c]) => ({ key, order: c.order, weight: c.weight, born: c.born }))
     const firstAspect = [...cells.values()].find((c) => c.pieces.length)?.pieces[0].clip.aspect ?? 16 / 9
-    // with a main video behind, the tiles sit inside a smaller stage so the bed stays in view
-    const inner = mains.length && o.mode !== 'stack' ? 0.64 : 1
-    const IW = W * inner, IH = H * inner, ox = (W - IW) / 2, oy = (H - IH) / 2
+    // the main video's place decides the tiles' area: behind (a smaller stage in the middle, so the
+    // bed stays in view), beside (the right half), or in a corner (the tiles keep the whole stage)
+    const place = mains[0] ? (mains[0].v.chain.split(':')[1] ?? 'behind') : 'none'
+    const side = place === 'side'
+    const inner = place === 'behind' && o.mode !== 'stack' ? 0.64 : 1
+    const IW = side ? W / 2 : W * inner, IH = side ? H : H * inner, ox = side ? W / 2 : (W - IW) / 2, oy = side ? 0 : (H - IH) / 2
     const raw = this.layout.update(o.mode, cellList, IW, IH, firstAspect, now, dt || 1 / dispFps)
-    const rects = inner === 1 ? raw : new Map([...raw].map(([k, r]) => [k, { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h }]))
+    const rects = ox === 0 && oy === 0 ? raw : new Map([...raw].map(([k, r]) => [k, { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h }]))
 
     const look = o.look ?? CLEAN_LOOK, short = Math.min(W, H)
     const framed = o.mode !== 'stack'
     const gap = framed ? Math.round(look.gap * short) : 0, radius = framed ? look.radius * short : 0, border = framed ? look.border * short : 0
     const frame = (r: { x: number; y: number; w: number; h: number }) => ({ ...inset(r, gap / 2), radius, border })
     this.collage.clear(W, H, o.background)
-    // the main video, full frame, behind everything
-    for (const p of mains) {
+    // the main video: full frame behind everything, or the left half; a corner one is drawn last
+    const mainTile = (p: Piece, r: { x: number; y: number; w: number; h: number }, framedTile: boolean): [TexArray, Tile] | null => {
       const cf = this.cache.clips.get(p.clip.id)
-      if (!cf) continue
+      if (!cf) return null
       const shownAspect = cf.rotation % 180 ? 1 / cf.aspect : cf.aspect
-      this.collage.draw(cf.M ?? cf.S, [{ x: 0, y: 0, w: W, h: H, q: p.q, W: p.W, alpha: p.alpha * (o.mainAlpha ?? 1), crop: o.fit ? [0, 0, 1, 1] : fillCrop(shownAspect, W / H), rot: cf.rotation / 90 }], W, H, 'normal', o.maxTaps ?? 8)
+      const fr = framedTile ? frame(r) : { ...r, radius: 0, border: 0 }
+      return [cf.M ?? cf.S, { ...fr, q: p.q, W: p.W, alpha: p.alpha * (o.mainAlpha ?? 1), crop: o.fit ? [0, 0, 1, 1] : fillCrop(shownAspect, fr.w / Math.max(1, fr.h)), rot: cf.rotation / 90 }]
+    }
+    if (place === 'behind' || side) for (const p of mains) {
+      const mt = mainTile(p, side ? { x: 0, y: 0, w: W / 2, h: H } : { x: 0, y: 0, w: W, h: H }, side)
+      if (mt) this.collage.draw(mt[0], [mt[1]], W, H, 'normal', o.maxTaps ?? 8, look.borderRGB)
     }
     const groups = new Map<TexArray, Tile[]>()
     const push = (arr: TexArray, tile: Tile) => { const g = groups.get(arr) ?? []; g.push(tile); groups.set(arr, g) }
@@ -150,6 +159,11 @@ export class Stage {
     }
     const blend: Blend = o.mode === 'stack' ? 'screen' : 'normal'
     for (const [arr, tiles] of groups) this.collage.draw(arr, tiles, W, H, blend, o.maxTaps ?? 8, look.borderRGB)
+    if (place === 'pip') for (const p of mains) { // a corner window over the tiles, a quarter of the stage
+      const w = W * 0.34, h = Math.min(H * 0.34, (w * H) / W)
+      const mt = mainTile(p, { x: W - w - short * 0.03, y: H - h - short * 0.03, w, h }, true)
+      if (mt) this.collage.draw(mt[0], [mt[1]], W, H, 'normal', o.maxTaps ?? 8, look.borderRGB)
+    }
     return cellList.filter((c) => c.weight > 0).length
   }
 }

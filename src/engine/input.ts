@@ -33,6 +33,7 @@ export interface KeyContext {
   velocityStep(delta: number): void
   record(): void
   loopRecord?(): void
+  section?(index: number): void
 }
 
 const typing = (e: KeyboardEvent) => {
@@ -58,6 +59,7 @@ export function attachKeyboard(h: InputHandlers, ctx: () => KeyContext): () => v
       if (e.code === 'KeyX') { k.octave(1); return }
       if (e.code === 'KeyC') { k.velocityStep(-20); return }
       if (e.code === 'KeyV') { k.velocityStep(20); return }
+      if (/^Digit[1-8]$/.test(e.code)) { k.section?.(Number(e.code.slice(5)) - 1); return }
       if (k.keyNote) note = k.keyNote(e.code)
       else {
         const i = NOTE_KEYS.indexOf(e.code)

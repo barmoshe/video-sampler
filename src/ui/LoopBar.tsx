@@ -15,6 +15,10 @@ export function LoopBar() {
   const redo = useStore(app.store, (s) => s.redoLayers)
   const bar = useStore(app.store, (s) => s.bar)
   const main = useStore(app.store, (s) => s.main)
+  const section = useStore(app.store, (s) => s.section)
+  const others = useStore(app.store, (s) => s.sections)
+  const queued = useStore(app.store, (s) => s.queued)
+  const ids = [section, ...others.map((x) => x.id)].sort()
   const clips = useStore(app.store, (s) => s.clips)
   const taps = useRef<number[]>([])
   const set = (p: Partial<Transport>) => app.setTransport(p)
@@ -58,6 +62,12 @@ export function LoopBar() {
           <button type="button" key={l.id} className="chip" aria-pressed={!l.muted} onClick={() => app.muteLayer(l.id)} title={`${l.notes.length} notes; click to ${l.muted ? 'unmute' : 'mute'}`}>L{i + 1}</button>
         ))}
       </span>
+      <fieldset className="sections"><legend className="sr">Sections</legend>
+        {ids.map((id, i) => (
+          <button key={id} type="button" className={`chip ${queued === id ? 'queued' : ''}`} aria-pressed={section === id} onClick={() => app.switchSection(id)} title={`Section ${id} (key ${i + 1}); switches on the next bar while looping`}>{id}</button>
+        ))}
+        <button type="button" className="chip" onClick={() => app.addSection()} title="A new section: its own layers, main video and layout">+</button>
+      </fieldset>
       <span className="spacer" />
       <label className="num">Main video
         <select value={main.clipId ?? ''} onChange={(e) => app.setMain({ clipId: e.target.value || null })}>
@@ -66,7 +76,12 @@ export function LoopBar() {
         </select>
       </label>
       {main.clipId && (
-        <label className="num">Sound <input type="range" min={0} max={1} step={0.05} value={main.gain} onChange={(e) => app.setMain({ gain: Number(e.target.value) })} /></label>
+        <>
+          <select aria-label="Main video place" value={main.place} onChange={(e) => app.setMain({ place: e.target.value as typeof main.place })}>
+            <option value="behind">Behind</option><option value="side">Beside</option><option value="pip">Corner</option>
+          </select>
+          <label className="num">Sound <input type="range" min={0} max={1} step={0.05} value={main.gain} onChange={(e) => app.setMain({ gain: Number(e.target.value) })} /></label>
+        </>
       )}
     </div>
   )

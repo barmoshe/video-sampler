@@ -5,6 +5,16 @@
 export interface LoopNote { at: number; len: number; note: number; vel: number } // beats from the loop's start
 export interface Layer { id: number; notes: LoopNote[]; muted: boolean }
 
+/** A section of a song (ADR 0771): its own layers, main video and layout, switched on the bar. */
+export interface Section<M = unknown, L = string> { id: string; layers: Layer[]; main: M; layout: L | null }
+export const SECTION_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+
+/** The first bar line at or after t (bars counted from t0); t0 itself when t is before it. */
+export function nextBar(t: number, t0: number, tr: Transport): number {
+  const bar = beatSeconds(tr.bpm) * tr.beats
+  return t <= t0 ? t0 : t0 + Math.ceil((t - t0) / bar - 1e-9) * bar
+}
+
 export interface Transport {
   bpm: number
   beats: number // beats per bar

@@ -7,6 +7,7 @@ import { ClipPanel } from './ClipPanel'
 import { ExportDialog } from './ExportDialog'
 import { Keyboard } from './Keyboard'
 import { LayersPanel } from './LayersPanel'
+import { LibraryDialog } from './LibraryDialog'
 import { LoopBar } from './LoopBar'
 import { PadsPanel } from './PadsPanel'
 import { SettingsDialog } from './SettingsDialog'
@@ -17,7 +18,7 @@ const ASPECTS: [StageAspect, string][] = [['16:9', '16:9'], ['9:16', '9:16'], ['
 
 export function App() {
   const s = useStore(app.store, (x) => x)
-  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | 'library' | null>(null)
   useEffect(() => app.attachKeyboard(), [])
 
   const layout = s.layouts[s.kind]
@@ -32,6 +33,7 @@ export function App() {
             </button>
           ))}
         </fieldset>
+        <button type="button" className="btn" onClick={() => setDialog('library')} title="The built-in sounds and videos">Library</button>
         <div className="spacer" />
         <select aria-label="Layout" value={layout} onChange={(e) => app.setLayout(e.target.value as LayoutMode)}>
           {LAYOUTS.filter(([m]) => m !== 'home' || s.kind === 'pads').map(([m, l]) => <option key={m} value={m}>{l}</option>)}
@@ -53,7 +55,7 @@ export function App() {
       </header>
 
       <div className="main">
-        <StagePane onCamera={() => setDialog('camera')} />
+        <StagePane onCamera={() => setDialog('camera')} onLibrary={() => setDialog('library')} />
         <aside className="side" aria-label="Instrument settings">
           {s.kind === 'clip' && <ClipPanel onCamera={() => setDialog('camera')} />}
           {s.kind === 'pads' && <PadsPanel onCamera={() => setDialog('camera')} />}
@@ -75,6 +77,7 @@ export function App() {
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
       {dialog === 'camera' && <CameraDialog onClose={() => setDialog(null)} />}
       {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} />}
+      {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
     </div>
   )
 }

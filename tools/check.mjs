@@ -300,9 +300,20 @@ try {
     await shot('08-looper-main.png')
     await evaluate('window.__vs.toggleRecord()'); await sleep(2200); await evaluate('window.__vs.toggleRecord()')
     const take = await S('`${s.take.events.length} events, main ${s.take.events.some((e) => e.ev.type === "main")}, hold ${s.take.hold}`')
+    // sections: B starts on the next bar with its own (empty) layers and a main video beside the tiles
+    await evaluate('window.__vs.addSection()')
+    await sleep(2300)
+    const inB = await S('`${s.section} layers ${s.loopLayers.length}, others ${s.sections.map((x) => x.id + ":" + x.layers.length).join(",")}`')
+    await evaluate("window.__vs.setMain({ clipId: window.__vs.store.get().clips[0].id, place: 'side' })")
+    await sleep(600)
+    await shot('08b-section-b-side.png')
+    await evaluate("window.__vs.switchSection('A')")
+    await sleep(2300)
+    const backA = await S('`${s.section} layers ${s.loopLayers.length}`')
     await evaluate('window.__vs.loopStop(); window.__vs.setMain({ clipId: null })')
-    if (layers !== 1 || notes !== 3 || !/L:1/.test(cells) || !/main/.test(cells)) throw new Error(`layers ${layers}, notes ${notes}, cells ${cells}`)
-    return `1 layer of ${notes} notes; sounding cells: ${cells}; take: ${take}`
+    if (inB !== 'B layers 0, others A:1' || backA !== 'A layers 1') throw new Error(`sections: ${inB}; ${backA}`)
+    if (layers !== 1 || notes !== 3 || !/L:A:1/.test(cells) || !/main/.test(cells)) throw new Error(`layers ${layers}, notes ${notes}, cells ${cells}`)
+    return `1 layer of ${notes} notes; cells: ${cells}; take: ${take}; sections: ${inB} then ${backA}`
   })
   await step('export the loop take with its main video (16:9, gallery)', async () => {
     for (const f of readdirSync(OUT).filter((x) => x.endsWith('.mp4'))) rmSync(join(OUT, f))

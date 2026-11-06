@@ -5,7 +5,7 @@ import type { StageAspect } from '../engine/types'
 
 const RATIO: Record<StageAspect, number> = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1 }
 
-export function StagePane({ onCamera }: { onCamera: () => void }) {
+export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLibrary: () => void }) {
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const aspect = useStore(app.store, (s) => s.aspect)
@@ -56,6 +56,7 @@ export function StagePane({ onCamera }: { onCamera: () => void }) {
             <div className="row">
               <button type="button" className="btn primary" onClick={() => file.current?.click()}>Choose a video</button>
               <button type="button" className="btn" onClick={onCamera}>Record with the camera</button>
+              <button type="button" className="btn" onClick={onLibrary}>Open the library</button>
               <button type="button" className="btn" onClick={() => void app.loadDemo()}>Try a demo clip</button>
             </div>
             <p className="small">Or drop a video (or a .mid file) anywhere here. Then play with the keys A to ' or a MIDI keyboard. Your clips stay on this computer.</p>

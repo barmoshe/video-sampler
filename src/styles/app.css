@@ -165,4 +165,14 @@ button.key { padding: 0 0 6px; }
 .loopbar .layerchips { display: inline-flex; gap: 4px; }
 .loopbar .chip { font: 600 11px var(--mono); padding: 3px 7px; border: 1px solid var(--rule); background: var(--raise); cursor: pointer; }
 .loopbar .chip[aria-pressed='true'] { border-color: var(--orange); color: var(--ink); }
-.loopbar .chip[aria-pressed='false'] { opacity: 0.45; text-decoration: line-through; }
+.loopbar .layerchips .chip[aria-pressed='false'] { opacity: 0.45; text-decoration: line-through; }
+.loopbar .sections { display: inline-flex; gap: 4px; padding: 0 0 0 6px; margin: 0; border: 0; border-left: 1px solid var(--rule); }
+.loopbar .chip.queued { border-color: var(--blue); animation: blink 0.5s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.4; } }
+
+/* the library */
+.libgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; max-height: 56vh; overflow: auto; }
+.libitem { display: grid; gap: 4px; padding: 0 0 8px; border: 1px solid var(--rule); background: var(--raise); cursor: pointer; text-align: left; font-size: 12px; }
+.libitem img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #000; }
+.libitem span { padding: 0 8px; }
+.libitem:hover:not(:disabled) { border-color: var(--orange); }

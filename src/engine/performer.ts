@@ -5,7 +5,10 @@ import {
   clipNote, layersNote, noteSelector, padsNote, selectorValue, zone, effectiveChain, dB,
   type ClipParams, type LayersParams, type PadsParams,
 } from './instruments'
-import type { Clip, InstrumentKind, NoteSpec, Voice } from './types'
+import type { Clip, InstrumentKind, LayoutMode, NoteSpec, Voice } from './types'
+
+/** Where a section's main video sits: behind the tiles, beside them (half the stage), or in a corner. */
+export type MainPlace = 'behind' | 'side' | 'pip'
 import { gainAt } from './voicebook'
 import { VoiceBook } from './voicebook'
 import { velocityGain } from './voice-math'
@@ -29,7 +32,8 @@ export interface InstrumentState {
 export type PlayEvent =
   | { type: 'on'; note: number; vel: number; src?: number; cell?: string }
   | { type: 'off'; note: number; src?: number }
-  | { type: 'main'; clipId: string | null; gain: number; offset?: number } // the section's main video behind the tiles, from `offset` s
+  | { type: 'main'; clipId: string | null; gain: number; offset?: number; place?: MainPlace } // the section's main video, from `offset` s
+  | { type: 'layout'; mode: LayoutMode; section?: string } // a section starts here: its layout (a cue the export follows)
   | { type: 'sustain'; down: boolean }
   | { type: 'bend'; value: number } // −1..1
   | { type: 'macro'; index: number; value: number }
@@ -63,7 +67,7 @@ export class Performer {
     this.onPlay?.(ev, t)
     if (ev.type === 'on') this.noteOn(ev.note, ev.vel, t, ev.src ?? 0, ev.cell)
     else if (ev.type === 'off') this.noteOff(ev.note, t, ev.src ?? 0)
-    else if (ev.type === 'main') this.setMain(ev.clipId, ev.gain, t, ev.offset ?? 0)
+    else if (ev.type === 'main') this.setMain(ev.clipId, ev.gain, t, ev.offset ?? 0, ev.place ?? 'behind')
     else if (ev.type === 'sustain') this.setSustain(ev.down, t)
     else if (ev.type === 'bend') this.setBend(ev.value * this.state.bendRange, t)
     else if (ev.type === 'macro') this.setMacro(ev.index, ev.value, t)
@@ -206,13 +210,13 @@ export class Performer {
   }
 
   /** The main video: one looping voice in the cell 'main', drawn behind the tiles (ADR 0771). */
-  setMain(clipId: string | null, gain: number, t: number, offset = 0) {
+  setMain(clipId: string | null, gain: number, t: number, offset = 0, place: MainPlace = 'behind') {
     const evs: EngineEvent[] = []
     for (const v of this.book.live(t)) if (v.cell === 'main') this.kill(v, t, CHOKE_MS, evs)
     const clip = clipId ? this.clips.get(clipId) : undefined
     if (clip) {
       const sp: NoteSpec = {
-        clipId: clip.id, cell: 'main', chain: 'main', rate: 1,
+        clipId: clip.id, cell: 'main', chain: `main:${place}`, rate: 1,
         region: { start: offset % clip.duration, end: clip.duration, loop: true, loopStart: 0, loopEnd: clip.duration },
         reverse: false, xfade: 0.05, gain, pan: 0, env: { a: 0.01, d: 1, s: 1, r: 0.3 }, choke: 0, gate: true, mono: null,
       }
