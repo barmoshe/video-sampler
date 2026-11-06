@@ -7,6 +7,7 @@ import {
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
 import { importClip } from './media'
 import { History } from './history'
+import { defaultFx, delaySeconds, type FxSettings } from './fx'
 import { askToKeep, canPersist, clearProject, loadProject, readClipFile, saveClipFile, saveProject } from './persist'
 import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
 import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesIn, SECTION_IDS, type Layer, type Section, type Transport } from './looper'
@@ -39,6 +40,7 @@ export interface AppState {
   looping: boolean // the transport runs (loops play, the metronome clicks)
   loopRec: boolean // live playing is being recorded into layers, one per pass
   bar: number // the current bar (for the UI), −1 during the count-in
+  fx: FxSettings // the effects bus's returns and glue
   main: MainState // the current section's main video
   sections: Section<MainState, LayoutMode>[] // the other sections' state (the current one lives in loopLayers, main, layouts)
   section: string // the current section
@@ -61,8 +63,11 @@ export interface AppState {
   canRedo: boolean
 }
 
+/** The returns' picture twins, from the bus settings (stage.ts). */
+export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx, bpm), feedback: fx.delay.feedback, level: fx.delay.level, decay: fx.reverb.decay, reverb: fx.reverb.level })
+
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
-const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'take'] as const
+const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
 const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
@@ -74,7 +79,7 @@ const initial = (): AppState => ({
   layouts: { clip: 'gallery', pads: 'home', layers: 'gallery' }, aspect: '16:9', fit: false,
   octave: 0, scale: defaultScale(), velocity: 100,
   transport: defaultTransport(), loopLayers: [], redoLayers: [], looping: false, loopRec: false, bar: 0,
-  main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' },
+  main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' }, fx: defaultFx(),
   sections: [], section: 'A', queued: null, active: [], recording: false, take: null, playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
   savedAt: null, canUndo: false, canRedo: false,
@@ -106,6 +111,7 @@ export class App {
 
   private async boot() {
     this.engine = await AudioEngine.create(this.ctx)
+    this.engine.setFx(this.store.get().fx, this.store.get().transport.bpm)
     this.performer = new Performer(this.instrumentState(), this.clips, {
       send: (evs) => { void this.engine!.events(evs) },
       frameOf: (t) => Math.round(t * this.ctx.sampleRate),
@@ -129,8 +135,11 @@ export class App {
   private asked = false
 
   /** Every store change: keep the performer in step; an edit settles into an undo step and a save. */
+  private fxRefs: unknown[] = []
   private onChange() {
     this.syncPerformer()
+    const st = this.store.get()
+    if (this.engine && (st.fx !== this.fxRefs[0] || st.transport.bpm !== this.fxRefs[1])) { this.fxRefs = [st.fx, st.transport.bpm]; this.engine.setFx(st.fx, st.transport.bpm) }
     if (this.restoring) return
     const s = this.store.get()
     const refs = SAVE_KEYS.map((k) => s[k])
@@ -227,7 +236,7 @@ export class App {
     const t = audibleAt(this.ctx, now) + 1 / 60 + s.pictureOffsetMs / 1000
     const n = this.stage.drawAt(t, now / 1000, this.performer.book.voices, this.clips, {
       mode: s.layouts[s.kind], fit: s.fit, homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(),
-      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section,
+      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section, echo: echoOf(s.fx, s.transport.bpm),
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
     if (Math.random() < 0.02) this.performer.book.prune(this.ctx.currentTime)
@@ -406,6 +415,7 @@ export class App {
   }
 
   /** The keyboard follows the clip: the QWERTY octave moves so the clip's home key is on the home row. */
+  setFx(p: Partial<FxSettings>) { this.store.set((s) => ({ fx: { ...s.fx, ...p } })) }
   setScale(p: Partial<ScaleSetting>) { this.panic(); this.store.set((s) => ({ scale: { ...s.scale, ...p } })) }
 
   followHome() {
@@ -676,6 +686,7 @@ export class App {
       const blob = await exportTake(s.take, {
         state: this.instrumentState(), clips: this.clips, levels: this.levels, stage: this.stage,
         homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(), fit: s.fit,
+        fx: s.fx, bpm: s.transport.bpm,
       }, opts, (progress, stage) => this.store.set({ exporting: { progress, stage } }))
       download(blob, `${s.take.name} ${opts.aspect.replace(':', 'x')}.mp4`)
     } catch (e) {

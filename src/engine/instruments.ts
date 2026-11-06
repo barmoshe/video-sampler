@@ -27,13 +27,19 @@ export interface ClipParams {
   slicePlayback: 'mono' | 'poly' | 'thru'
   filter: FilterSpec
   lfo: LfoSpec
+  sends: Sends
 }
+
+/** Sends to the effects bus's returns (fx.ts), 0..1. */
+export interface Sends { delay: number; reverb: number }
+export const noSends = (): Sends => ({ delay: 0, reverb: 0 })
+export const sendSpec = (s: Sends | undefined) => (s && (s.delay || s.reverb) ? { sendA: s.delay, sendB: s.reverb } : {})
 export const defaultClipParams = (): ClipParams => ({
   clipId: null, mode: 'classic', tune: 'nearest', root: 60, transpose: 0, detune: 0,
   start: 0, end: 1, loop: true, loopStart: 0, loopEnd: 1, xfade: 0.03, voices: 128, retrig: true,
   env: { ...DEFAULT_ENV }, velRange: 40, reverse: false, oneShotPoly: false,
   sliceBy: 'transient', sliceRegions: 16, slicePlayback: 'mono',
-  filter: { ...DEFAULT_FILTER, env: { ...DEFAULT_FILTER.env } }, lfo: { ...DEFAULT_LFO },
+  filter: { ...DEFAULT_FILTER, env: { ...DEFAULT_FILTER.env } }, lfo: { ...DEFAULT_LFO }, sends: noSends(),
 })
 
 /** The filter and LFO a voice carries, or nothing when they would do nothing. */
@@ -99,7 +105,7 @@ function reverseRegion(r: Region, d: number): Region {
 export function clipNote(p: ClipParams, clip: Clip, note: number, vel: number): NoteSpec[] {
   const d = clip.duration
   const s = p.start * d, e = Math.max(p.end * d, s + 0.01)
-  const base = { clipId: clip.id, chain: 'clip', cell: `n:${note}`, xfade: p.xfade, gain: velocityGain(vel, p.velRange), pan: 0, env: p.env, choke: 0, ...shaping(p.filter, p.lfo) }
+  const base = { clipId: clip.id, chain: 'clip', cell: `n:${note}`, xfade: p.xfade, gain: velocityGain(vel, p.velRange), pan: 0, env: p.env, choke: 0, ...shaping(p.filter, p.lfo), ...sendSpec(p.sends) }
   let region: Region, r: number, gate = true, mono: string | null = null
   if (p.mode === 'slice') {
     const sl = sliceTimes(p, clip), i = note - SLICE_BASE
@@ -132,6 +138,7 @@ export interface PadChain {
   mode: 'oneshot' | 'classic'
   tune: boolean // nearest note: a pitched clip plays exactly on a note at playNote
   env: Env
+  sends?: Sends
 }
 export interface PadsParams { chains: PadChain[]; bank: number; voices: number; selected: number }
 export const PAD_BASE = 36
@@ -152,7 +159,7 @@ export function padsNote(p: PadsParams, clips: Map<string, Clip>, note: number, 
       clipId: clip.id, chain: `pad:${c.note}:${i}`, cell: `p:${c.note}`, rate: rate(c.playNote, 60 + padCents(c, clip)),
       region: { start: 0, end: clip.duration, loop, loopStart: 0, loopEnd: clip.duration },
       reverse: false, xfade: 0.02, gain: velocityGain(vel) * dB(c.volume + c.trim), pan: c.pan, env: c.env,
-      choke: c.choke, gate: c.mode === 'classic', mono: null, monoNote: false,
+      choke: c.choke, gate: c.mode === 'classic', mono: null, monoNote: false, ...sendSpec(c.sends),
     }]
   })
 }
@@ -179,6 +186,7 @@ export interface LayersParams {
   voices: number
   env: Env
   macros: Macro[]
+  sends?: Sends
 }
 let chainSeq = 1
 export const newLayer = (clipId: string | null = null): LayerChain => ({
@@ -251,7 +259,7 @@ export function layersNote(p: LayersParams, clips: Map<string, Clip>, note: numb
       rate: rate(note, clip.root, c.transpose),
       region: { start: 0, end: clip.duration, loop: true, loopStart: 0, loopEnd: clip.duration },
       reverse: false, xfade: 0.03, gain: velocityGain(vel) * dB(c.volume) * z, pan: c.pan, env: p.env,
-      choke: 0, gate: true, mono: null, monoNote: false,
+      choke: 0, gate: true, mono: null, monoNote: false, ...sendSpec(p.sends),
     }]
   })
 }

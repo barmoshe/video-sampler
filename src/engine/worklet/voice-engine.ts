@@ -20,6 +20,7 @@ export interface OnEvent {
   rate: number; start: number; end: number; loop: boolean; loopStart: number; loopEnd: number; xfade: number
   gain: number; pan: number; env: { a: number; d: number; s: number; r: number }
   note: number; filter?: FilterSpec; lfo?: LfoSpec
+  sendA?: number; sendB?: number // to the delay and the reverb returns (outputs 1 and 2)
 }
 export interface OffEvent { kind: 'off'; frame: number; id: number; fastMs?: number }
 /** A new gain multiplier, ramped over 30 ms (layer zones, macros: the chain-selector morph). */
@@ -37,6 +38,7 @@ interface Voice {
   filter: FilterSpec | null; lfo: LfoSpec | null
   mode: number; a1: number; a2: number; a3: number; k: number; dk: number; dn: number
   s1L: number; s2L: number; s1R: number; s2R: number; trem: number
+  sA: number; sB: number
 }
 
 const MODES: Record<string, number> = { lp: 1, hp: 2, bp: 3, notch: 4 }
@@ -89,7 +91,7 @@ class VoiceEngine extends AudioWorkletProcessor {
       lfo: ev.lfo && (ev.lfo.filter || ev.lfo.volume || ev.lfo.pan) ? ev.lfo : null,
       mode: ev.filter ? MODES[ev.filter.type] ?? 0 : 0, a1: 0, a2: 0, a3: 0, k: 2,
       dk: 1 + 15 * (ev.filter?.drive ?? 0) ** 2, dn: 1 / Math.tanh(1 + 15 * (ev.filter?.drive ?? 0) ** 2),
-      s1L: 0, s2L: 0, s1R: 0, s2R: 0, trem: 1,
+      s1L: 0, s2L: 0, s1R: 0, s2R: 0, trem: 1, sA: ev.sendA ?? 0, sB: ev.sendB ?? 0,
     })
   }
 
@@ -116,6 +118,8 @@ class VoiceEngine extends AudioWorkletProcessor {
   process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
     const out = outputs[0]
     const L = out[0], R = out[1] ?? out[0]
+    const A = outputs[1], B = outputs[2] // the delay and reverb sends (absent in a one-output node)
+    const AL = A?.[0], AR = A?.[1] ?? AL, BL = B?.[0], BR = B?.[1] ?? BL
     const n = L.length
     const f0 = currentFrame
     while (this.events.length && this.events[0].frame < f0 + n) {
@@ -172,8 +176,11 @@ class VoiceEngine extends AudioWorkletProcessor {
           }
         }
         const g = env * v.gain * v.trem
-        L[i] += xl * g * v.gL
-        R[i] += xr * g * v.gR
+        const ol = xl * g * v.gL, or = xr * g * v.gR
+        L[i] += ol
+        R[i] += or
+        if (v.sA && AL) { AL[i] += ol * v.sA; AR![i] += or * v.sA }
+        if (v.sB && BL) { BL[i] += ol * v.sB; BR![i] += or * v.sB }
         pos += v.step
       }
       v.pos = pos; v.env = env; v.stage = stage

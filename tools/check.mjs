@@ -326,6 +326,18 @@ try {
     const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, f)]).toString().trim()
     return `${f}: ${Number(probe).toFixed(2)} s`
   })
+  await step('effects: delay and reverb sends; a released tile echoes and glows; the meter moves', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setLayout('gallery'); window.__vs.setClip({ sends: { delay: 0.7, reverb: 0.6 } })")
+    await key('KeyA', 'keyDown'); await sleep(350)
+    const level = await evaluate('window.__vs.engine.fx.level(new Float32Array(2048))')
+    await key('KeyA', 'keyUp')
+    await sleep(500) // the sound's release is over; its echoes and its glow are not
+    const cells = await S('s.voices')
+    await shot('10-fx-echo.png')
+    await evaluate('window.__vs.setClip({ sends: { delay: 0, reverb: 0 } })')
+    if (cells < 1 || level < -50) throw new Error(`cells ${cells}, level ${level.toFixed(1)} dB`)
+    return `mix ${level.toFixed(1)} dBFS while playing; ${cells} tile still on stage 0.5 s after release (echoes and glow)`
+  })
   await step('undo an edit; the project saves itself and comes back after a reload', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")
     await sleep(700)

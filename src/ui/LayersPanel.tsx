@@ -110,6 +110,8 @@ export function LayersPanel() {
         <div className="grid2">
           <Slider label="Voices" value={L.voices} min={1} max={128} onChange={(voices) => app.setLayers({ voices })} />
           <Slider label="Release" value={L.env.r} min={0.03} max={6} step={0.01} format={(v) => `${v.toFixed(2)} s`} onChange={(r) => app.setLayers({ env: { ...L.env, r } })} />
+          <Slider label="Delay send" value={L.sends?.delay ?? 0} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)} %`} onChange={(delay) => app.setLayers({ sends: { delay, reverb: L.sends?.reverb ?? 0 } })} />
+          <Slider label="Reverb send" value={L.sends?.reverb ?? 0} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)} %`} onChange={(reverb) => app.setLayers({ sends: { delay: L.sends?.delay ?? 0, reverb } })} />
         </div>
       </Section>
     </>

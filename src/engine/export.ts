@@ -11,6 +11,7 @@ import { LayoutEngine } from './layout'
 import type { Take } from './take'
 import type { Clip, LayoutMode, StageAspect } from './types'
 import type { EngineEvent } from './worklet/voice-engine'
+import { delaySeconds, type FxSettings } from './fx'
 
 export interface ExportOptions { aspect: StageAspect; layout: LayoutMode; height: 720 | 1080; fps: 30 | 60; followSections?: boolean }
 
@@ -30,16 +31,19 @@ interface Deps {
   homeCells?: DrawOptions['homeCells']
   homeBase?: number
   fit: boolean
+  fx: FxSettings
+  bpm: number
 }
 
 const LEAD = 0.1, TAIL = 1.5, FS = 48000
 const BT709: VideoColorSpaceInit = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false }
 
 export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress: (p: number, stage: string) => void): Promise<Blob> {
-  const seconds = LEAD + take.duration + TAIL
+  const seconds = LEAD + take.duration + Math.max(TAIL, d.fx.reverb.decay * 0.8, 4 * delaySeconds(d.fx, d.bpm)) // the returns' tails
   // ---- sound
   const octx = new OfflineAudioContext(2, Math.ceil(seconds * FS), FS)
   const engine = await AudioEngine.create(octx)
+  engine.setFx(d.fx, d.bpm)
   const used = new Set<string>()
   const all: EngineEvent[] = []
   const performer = new Performer(structuredClone(d.state), d.clips, { send: (evs) => { all.push(...evs) }, frameOf: (t) => Math.round(t * FS) })
@@ -82,7 +86,7 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     const modeAt = (t: number) => (o.followSections === false ? o.layout : cueAt(t)?.mode ?? o.layout)
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
-      d.stage.drawAt(t, t, voices, d.clips, { section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
+      d.stage.drawAt(t, t, voices, d.clips, { echo: { time: delaySeconds(d.fx, d.bpm), feedback: d.fx.delay.feedback, level: d.fx.delay.level, decay: d.fx.reverb.decay, reverb: d.fx.reverb.level }, section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
       for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
       const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })

@@ -17,6 +17,7 @@ export interface DrawOptions {
   look?: Look
   hold?: number // seconds a looper layer's tile stays (its last frame) after its last note: the loop length
   section?: string // the current section: other sections' layer tiles are not held
+  echo?: { time: number; feedback: number; level: number; decay: number; reverb: number } // the returns' picture twins: delay s, feedback, delay level, reverb decay s, reverb level
   mainAlpha?: number // the main video behind the tiles (ADR 0771)
 }
 
@@ -59,44 +60,64 @@ export class Stage {
     const dt = Math.min(0.1, Math.max(0, now - this.lastT))
     this.lastT = now
     const dispFps = o.displayFps ?? 60
-    type Piece = { v: Voice; clip: Clip; q: number; W: number; alpha: number }
+    type Piece = { v: Voice; clip: Clip; q: number; W: number; alpha: number; k?: number } // k: an echo k delay times back
+    const halos: { v: Voice; clip: Clip; q: number; alpha: number }[] = []
+    const fx = o.echo
     const cells = new Map<string, { order: number; weight: number; born: number; pieces: Piece[] }>()
     const mains: Piece[] = []
     if (this.held.size && [...this.held.values()].some((h) => h.seen > t + 1)) this.held.clear() // time went back (an export)
     for (const v of voices) {
-      if (v.on > t || t >= v.dead) continue
+      // a voice sent to the delay echoes for four delay times after it ends, to the reverb it glows for its tail
+      const echoT = fx && v.sendA ? 4 * fx.time : 0, glowT = fx && v.sendB ? fx.decay * 0.6 : 0
+      if (v.on > t || t >= v.dead + Math.max(echoT, glowT)) continue
       const clip = clips.get(v.clipId)
       if (!clip) continue
       if (v.cell === 'main') {
+        if (t >= v.dead) continue
         const qm = positionAt(v, t, clip.duration)
         // the picture follows the envelope, not the bed's sound level (a muted bed still shows)
         const env = v.gain > 0 ? gainAt(v, t) / v.gain : t < v.off ? 1 : 0
         if (qm !== null) mains.push({ v, clip, q: qm * clip.fps, W: 0.5 * (clip.fps / dispFps), alpha: shown(opacity(env)) })
         continue
       }
-      const q = positionAt(v, t, clip.duration)
-      if (q === null) continue
-      const alpha = shown(opacity(gainAt(v, t)))
-      if (alpha <= 0.002) continue
-      const r = rateAt(v, t)
       const order = v.cell.startsWith('L:') ? 1000 + Number(v.cell.split(':').at(-1)) : o.mode === 'home' ? Number(v.cell.split(':')[1]) - (o.homeBase ?? 36) : v.note
       if (o.mode === 'home' && (order < 0 || order > 15)) continue // another bank
       const c = cells.get(v.cell) ?? { order, weight: 0, born: v.on, pieces: [] }
-      c.weight = Math.max(c.weight, alpha)
-      c.born = Math.max(c.born, v.on)
-      c.pieces.push({ v, clip, q: q * clip.fps, W: r * 0.5 * (clip.fps / dispFps), alpha })
-      cells.set(v.cell, c)
+      const live = t < v.dead ? positionAt(v, t, clip.duration) : null
+      const alpha = live === null ? 0 : shown(opacity(gainAt(v, t)))
+      if (live !== null && alpha > 0.002) {
+        c.weight = Math.max(c.weight, alpha)
+        c.born = Math.max(c.born, v.on)
+        c.pieces.push({ v, clip, q: live * clip.fps, W: rateAt(v, t) * 0.5 * (clip.fps / dispFps), alpha })
+      }
+      // the delay's twin: the picture as it was k delay times ago, fading as the sound's echoes do
+      if (echoT) for (let k = 1; k <= 4; k++) {
+        const tk = t - k * fx!.time
+        if (tk < v.on || tk >= v.dead) continue
+        const ak = shown(opacity(gainAt(v, tk))) * v.sendA! * fx!.level * Math.pow(fx!.feedback, k - 1) * 0.85
+        const qk = ak > 0.02 ? positionAt(v, tk, clip.duration) : null
+        if (qk === null) continue
+        c.pieces.push({ v, clip, q: qk * clip.fps, W: 0, alpha: ak, k })
+        c.weight = Math.max(c.weight, ak * 0.5)
+      }
+      // the reverb's twin: a soft glow around the tile that lasts as long as the tail
+      if (glowT) {
+        const ah = t < v.dead ? alpha * v.sendB! * fx!.reverb * 0.55 : v.sendB! * fx!.reverb * 0.4 * Math.exp(-(t - v.dead) / (fx!.decay * 0.22))
+        const qh = positionAt(v, Math.min(t, v.dead - 1e-3), clip.duration)
+        if (ah > 0.015 && qh !== null) { halos.push({ v, clip, q: qh * clip.fps, alpha: ah }); c.weight = Math.max(c.weight, 0.01) }
+      }
+      if (c.pieces.length || halos.some((h) => h.v === v)) cells.set(v.cell, c)
     }
     if (o.mode === 'home' && o.homeCells) for (const h of o.homeCells) if (h.clipId && !cells.has(h.key)) cells.set(h.key, { order: h.order, weight: 0, born: 0, pieces: [] })
     // looper layers keep their tile between notes, showing the last frame, for one loop length
-    for (const [key, c] of cells) if (key.startsWith('L:') && c.pieces[0]) this.held.set(key, { clipId: c.pieces[0].clip.id, q: c.pieces[0].q, seen: t, order: c.order })
+    for (const [key, c] of cells) { const p0 = c.pieces.find((p) => !p.k); if (key.startsWith('L:') && p0) this.held.set(key, { clipId: p0.clip.id, q: p0.q, seen: t, order: c.order }) }
     const hold = o.hold ?? 0
     for (const [key, h] of this.held) {
       if (t - h.seen > hold || (o.section && !key.startsWith(`L:${o.section}:`))) { this.held.delete(key); continue }
       if (!cells.has(key)) cells.set(key, { order: h.order, weight: 0.001, born: 0, pieces: [] })
     }
     const cellList: CellIn[] = [...cells].map(([key, c]) => ({ key, order: c.order, weight: c.weight, born: c.born }))
-    const firstAspect = [...cells.values()].find((c) => c.pieces.length)?.pieces[0].clip.aspect ?? 16 / 9
+    const firstAspect = [...cells.values()].find((c) => c.pieces.length)?.pieces[0].clip.aspect ?? halos[0]?.clip.aspect ?? 16 / 9
     // the main video's place decides the tiles' area: behind (a smaller stage in the middle, so the
     // bed stays in view), beside (the right half), or in a corner (the tiles keep the whole stage)
     const place = mains[0] ? (mains[0].v.chain.split(':')[1] ?? 'behind') : 'none'
@@ -134,6 +155,15 @@ export class Stage {
       const shown = cf.rotation % 180 ? 1 / cf.aspect : cf.aspect
       push(cf.S, { ...frame(r), q: cf.poster, W: 0, alpha: 0.22, crop: o.fit ? [0, 0, 1, 1] : fillCrop(shown, r.w / r.h), rot: cf.rotation / 90 })
     }
+    const glow = new Map<TexArray, Tile[]>()
+    for (const hp of halos) { // the reverb's glow: a bigger, blurred copy behind the tile, added
+      const r = rects.get(hp.v.cell), cf = this.cache.clips.get(hp.clip.id)
+      if (!r || !cf) continue
+      const g = glow.get(cf.S) ?? []
+      g.push({ ...frame(scaleRect(r, 1.16)), q: hp.q, W: 0, alpha: hp.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(hp.clip.aspect, r.w / r.h), rot: cf.rotation / 90, fx: [0.07, 0, 0, 0] })
+      glow.set(cf.S, g)
+    }
+    for (const [arr, tiles] of glow) this.collage.draw(arr, tiles, W, H, 'add', o.maxTaps ?? 8, look.borderRGB)
     for (const [key, c] of cells) {
       const r = rects.get(key)
       if (!r) continue
@@ -144,13 +174,13 @@ export class Stage {
         if (cf && clip) push(cf.M && r.w > 300 ? cf.M : cf.S, { ...frame(r), q: h.q, W: 0, alpha: 0.45, crop: o.fit ? [0, 0, 1, 1] : fillCrop(clip.aspect, r.w / r.h), rot: cf.rotation / 90 })
         continue
       }
-      for (const p of c.pieces.sort((a, b) => a.v.on - b.v.on)) {
+      for (const p of c.pieces.sort((a, b) => (b.k ?? 0) - (a.k ?? 0) || a.v.on - b.v.on)) { // echoes first, behind
         const cf = this.cache.clips.get(p.clip.id)
         if (!cf) continue
         const arr = cf.M && r.w > 300 ? cf.M : cf.S
         // the hit lands in the picture: a short pop on the attack (velocity), a small shrink as it fades
         const since = t - p.v.on
-        const k = (1 + look.pop * (p.v.vel / 127) * Math.exp(-since / 0.09)) * (t > p.v.off ? 0.94 + 0.06 * p.alpha : 1)
+        const k = p.k ? 1 + 0.07 * p.k : (1 + look.pop * (p.v.vel / 127) * Math.exp(-since / 0.09)) * (t > p.v.off ? 0.94 + 0.06 * p.alpha : 1)
         const fr = framed ? frame(scaleRect(r, k)) : { ...r, radius: 0, border: 0 }
         const fc = filterAt(p.v, t)
         const fx = p.v.filter ? filterTwin(p.v.filter, fc ?? 20000) : undefined

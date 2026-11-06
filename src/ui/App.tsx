@@ -7,7 +7,9 @@ import { ClipPanel } from './ClipPanel'
 import { ExportDialog } from './ExportDialog'
 import { Keyboard } from './Keyboard'
 import { LayersPanel } from './LayersPanel'
+import { FxDialog } from './FxDialog'
 import { LibraryDialog } from './LibraryDialog'
+import { Meter } from './Meter'
 import { LoopBar } from './LoopBar'
 import { PadsPanel } from './PadsPanel'
 import { SettingsDialog } from './SettingsDialog'
@@ -18,7 +20,7 @@ const ASPECTS: [StageAspect, string][] = [['16:9', '16:9'], ['9:16', '9:16'], ['
 
 export function App() {
   const s = useStore(app.store, (x) => x)
-  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | 'library' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | 'library' | 'fx' | null>(null)
   useEffect(() => app.attachKeyboard(), [])
 
   const layout = s.layouts[s.kind]
@@ -34,6 +36,7 @@ export function App() {
           ))}
         </fieldset>
         <button type="button" className="btn" onClick={() => setDialog('library')} title="The built-in sounds and videos">Library</button>
+        <button type="button" className="btn" onClick={() => setDialog('fx')} title="The delay and reverb every instrument sends to, and the glue on the mix">Effects</button>
         <button type="button" className="btn" disabled={!s.canUndo} onClick={() => app.undo()} title="Undo (⌘Z)">Undo</button>
         <button type="button" className="btn" disabled={!s.canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)">Redo</button>
         <div className="spacer" />
@@ -69,6 +72,7 @@ export function App() {
       {s.kind !== 'pads' ? <Keyboard /> : <div />}
 
       <footer className="status" aria-live="polite">
+        <Meter />
         <span><b>{s.voices}</b> on stage</span>
         <span>{s.kind === 'pads' ? <>pads <b>Z X C V · A S D F · Q W E R · 1 2 3 4</b></> : <>keys <b>A–'</b> · octave <b>Z X</b> {s.octave >= 0 ? `+${s.octave}` : s.octave} · velocity <b>C V</b> {s.velocity}</>}</span>
         <span>sustain <b>Space</b> · bend <b>↑ ↓</b> · record <b>Enter</b></span>
@@ -81,6 +85,7 @@ export function App() {
       {dialog === 'camera' && <CameraDialog onClose={() => setDialog(null)} />}
       {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} />}
       {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
+      {dialog === 'fx' && <FxDialog onClose={() => setDialog(null)} />}
     </div>
   )
 }

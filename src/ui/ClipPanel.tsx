@@ -1,5 +1,5 @@
 import { app } from '../engine/app'
-import { clipRoot, homeKey, homeSpeed, sliceTimes, type ClipParams, type Tune } from '../engine/instruments'
+import { clipRoot, homeKey, homeSpeed, sliceTimes, type ClipParams, type Sends, type Tune } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import type { Clip } from '../engine/types'
 import { noteName, type FilterSpec, type FilterType, type LfoShape, type LfoSpec } from '../engine/voice-math'
@@ -117,6 +117,7 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
           </Section>
           <FilterSection filter={p.filter} onChange={(filter) => set({ filter })} />
           <LfoSection lfo={p.lfo} onChange={(lfo) => set({ lfo })} />
+          <SendsSection sends={p.sends} onChange={(sends) => set({ sends })} />
           <Section title="Clip file">
             <div className="clipcard">
               <img className="thumb big" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} />
@@ -170,6 +171,19 @@ export function LfoSection({ lfo: l, onChange }: { lfo: LfoSpec; onChange: (l: L
         <Slider label="To volume" value={l.volume} min={0} max={1} step={0.01} format={pct} onChange={(volume) => set({ volume })} />
         <Slider label="To pan" value={l.pan} min={0} max={1} step={0.01} format={pct} onChange={(pan) => set({ pan })} />
       </div>
+    </Section>
+  )
+}
+
+/** Sends to the effects bus's delay and reverb (their settings: Effects in the header). */
+export function SendsSection({ sends, onChange }: { sends: Sends; onChange: (s: Sends) => void }) {
+  return (
+    <Section title="Sends">
+      <div className="grid2">
+        <Slider label="Delay" value={sends.delay} min={0} max={1} step={0.01} format={pct} onChange={(delay) => onChange({ ...sends, delay })} />
+        <Slider label="Reverb" value={sends.reverb} min={0} max={1} step={0.01} format={pct} onChange={(reverb) => onChange({ ...sends, reverb })} />
+      </div>
+      <p className="muted" style={{ margin: '10px 0 0' }}>The tile echoes with the delay and glows with the reverb.</p>
     </Section>
   )
 }

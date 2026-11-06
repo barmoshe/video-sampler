@@ -2,12 +2,12 @@
 // and the master chain (poly trim → safety limiter). Clips are sent to the worklet as pyramids.
 import workletUrl from './worklet/voice-engine.ts?worker&url'
 import type { EngineEvent } from './worklet/voice-engine'
+import { FxBus, type FxSettings } from './fx'
 
 export class AudioEngine {
   readonly ctx: BaseAudioContext
   readonly node: AudioWorkletNode
-  readonly trim: GainNode
-  readonly limiter: DynamicsCompressorNode
+  readonly fx: FxBus
   readonly analyser: AnalyserNode
   private acks = new Map<number, () => void>()
   private nextAck = 1
@@ -16,11 +16,12 @@ export class AudioEngine {
   private constructor(ctx: BaseAudioContext, node: AudioWorkletNode) {
     this.ctx = ctx
     this.node = node
-    // design §5: unity voices, a −6 dB poly trim, a master limiter as a safety net (spike: 128 voices peak at +24 dB)
-    this.trim = new GainNode(ctx, { gain: 0.5 })
-    this.limiter = new DynamicsCompressorNode(ctx, { threshold: -2, knee: 0, ratio: 20, attack: 0.002, release: 0.12 })
-    this.analyser = new AnalyserNode(ctx, { fftSize: 1024 })
-    node.connect(this.trim).connect(this.limiter).connect(this.analyser).connect(ctx.destination)
+    // the worklet's three outputs: dry, the delay send, the reverb send (fx.ts); then the bus's glue,
+    // the limiter as a safety net (spike: 128 voices peak at +24 dB) and the meter
+    this.fx = new FxBus(ctx)
+    node.connect(this.fx.input, 0); node.connect(this.fx.delayIn, 1); node.connect(this.fx.reverbIn, 2)
+    this.analyser = this.fx.output
+    this.fx.output.connect(ctx.destination)
     node.port.onmessage = (e) => {
       if (e.data?.type === 'ack') { this.acks.get(e.data.ack)?.(); this.acks.delete(e.data.ack) }
     }
@@ -28,7 +29,7 @@ export class AudioEngine {
 
   static async create(ctx: BaseAudioContext): Promise<AudioEngine> {
     await ctx.audioWorklet.addModule(workletUrl)
-    const node = new AudioWorkletNode(ctx, 'voice-engine', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] })
+    const node = new AudioWorkletNode(ctx, 'voice-engine', { numberOfInputs: 0, numberOfOutputs: 3, outputChannelCount: [2, 2, 2] })
     return new AudioEngine(ctx, node)
   }
 
@@ -53,6 +54,7 @@ export class AudioEngine {
   }
 
   events(evs: EngineEvent[]): Promise<void> { return this.send({ type: 'events', events: evs }) }
+  setFx(fx: FxSettings, bpm: number) { this.fx.set(fx, bpm, this.ctx) }
   panic() { this.node.port.postMessage({ type: 'panic' }) }
 
   get sampleRate() { return this.ctx.sampleRate }
