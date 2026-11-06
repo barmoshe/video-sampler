@@ -77,15 +77,15 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
           <Section title="Region">
             <Region p={p} clip={clip} />
             <div className="grid2" style={{ marginTop: 10 }}>
-              <Slider label="Start" value={p.start} min={0} max={0.99} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(start) => set({ start: Math.min(start, p.end - 0.01) })} />
-              <Slider label="End" value={p.end} min={0.01} max={1} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(end) => set({ end: Math.max(end, p.start + 0.01) })} />
+              <Slider kind="slider" label="Start" value={p.start} min={0} max={0.99} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(start) => set({ start: Math.min(start, p.end - 0.01) })} />
+              <Slider kind="slider" label="End" value={p.end} min={0.01} max={1} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(end) => set({ end: Math.max(end, p.start + 0.01) })} />
               {p.mode === 'classic' && (
                 <>
                   <div style={{ gridColumn: '1 / -1' }}><Check label="Loop while held" checked={p.loop} onChange={(loop) => set({ loop })} /></div>
                   {p.loop && (
                     <>
-                      <Slider label="Loop start" value={p.loopStart} min={0} max={0.99} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(loopStart) => set({ loopStart: Math.min(loopStart, p.loopEnd - 0.01) })} />
-                      <Slider label="Loop end" value={p.loopEnd} min={0.01} max={1} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(loopEnd) => set({ loopEnd: Math.max(loopEnd, p.loopStart + 0.01) })} />
+                      <Slider kind="slider" label="Loop start" value={p.loopStart} min={0} max={0.99} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(loopStart) => set({ loopStart: Math.min(loopStart, p.loopEnd - 0.01) })} />
+                      <Slider kind="slider" label="Loop end" value={p.loopEnd} min={0.01} max={1} step={0.001} format={(v) => `${(v * clip.duration).toFixed(2)} s`} onChange={(loopEnd) => set({ loopEnd: Math.max(loopEnd, p.loopStart + 0.01) })} />
                       <Slider label="Crossfade" value={p.xfade} min={0} max={0.5} step={0.005} format={ms} onChange={(xfade) => set({ xfade })} />
                     </>
                   )}
@@ -144,7 +144,8 @@ export function FilterSection({ filter: f, onChange }: { filter: FilterSpec; onC
     <Section title="Filter">
       <Seg<FilterType> label="Type" value={f.type} options={[['off', 'Off'], ['lp', 'Low-pass'], ['hp', 'High-pass'], ['bp', 'Band'], ['notch', 'Notch']]} onChange={(type) => set({ type, cutoff: type === 'hp' && f.cutoff > 10000 ? 200 : type === 'lp' && f.cutoff > 16000 ? 2000 : f.cutoff })} />
       <div className="grid2" style={{ marginTop: 10 }}>
-        <Slider label="Cutoff" value={toLog(f.cutoff)} min={0} max={1000} format={(v) => hz(fromLog(v))} onChange={(v) => set({ cutoff: fromLog(v) })} disabled={off} />
+        <Slider label="Cutoff" value={toLog(f.cutoff)} min={0} max={1000} format={(v) => hz(fromLog(v))} onChange={(v) => set({ cutoff: fromLog(v) })} disabled={off} def={toLog(2000)}
+          parse={(s) => { const m = /^\s*(\d*\.?\d+)\s*(k)?/i.exec(s); return m ? toLog(Math.max(20, Math.min(20000, Number(m[1]) * (m[2] ? 1000 : 1)))) : null }} />
         <Slider label="Resonance" value={f.res} min={0} max={1} step={0.01} format={pct} onChange={(res) => set({ res })} disabled={off} />
         <Slider label="Drive" value={f.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} />
         <Slider label="Key track" value={f.key} min={0} max={1} step={0.05} format={pct} onChange={(key) => set({ key })} disabled={off} />
