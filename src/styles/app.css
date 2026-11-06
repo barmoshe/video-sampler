@@ -136,3 +136,11 @@ legend { padding: 0; }
 output.progress { display: block; }
 .bar { display: block; }
 button.key { padding: 0 0 6px; }
+
+/* scale bar and scale-lit keys */
+.keyzone { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.scalebar { display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-top: 1px solid var(--rule); background: var(--panel); font-size: 12px; min-width: 0; }
+.scalebar select { background: var(--raise); border: 1px solid var(--rule); padding: 3px 6px; border-radius: 0; font-size: 12px; }
+.scalebar .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.key.out { opacity: 0.35; }
+.key.tonic.w { background: #fbeee2; }

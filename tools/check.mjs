@@ -154,6 +154,23 @@ try {
     if (n !== 3) throw new Error(`${n} tiles`)
     return `${n} tiles`
   })
+  await step('tune: the keyboard follows the clip to its home key (A2 → octave −1)', async () => {
+    const r = await S('`octave ${s.octave}, tune ${s.clip.tune}, root ${s.clips[0].root.toFixed(2)}`')
+    if ((await S('s.octave')) !== -1) throw new Error(r)
+    return r
+  })
+  await step('scale lock + triads: one key plays a chord in key', async () => {
+    await evaluate("window.__vs.setScale({ lock: true, tonic: 0, scale: 'major', chord: 'triad' })")
+    await key('KeyS', 'keyDown') // the 2nd degree: D minor in C major
+    await sleep(500)
+    const n = await S('s.voices'), act = await S('JSON.stringify(s.active)')
+    await shot('02b-scale-chord.png')
+    await key('KeyS', 'keyUp')
+    await evaluate("window.__vs.setScale({ lock: false, chord: 'off' })")
+    await sleep(300)
+    if (n !== 3 || act !== '[50,53,57]') throw new Error(`${n} tiles, ${act}`)
+    return `${n} tiles, notes ${act} (D2 F2 A2)`
+  })
   for (const mode of ['keys', 'stack', 'mosaic', 'spotlight']) {
     await step(`layout ${mode}`, async () => {
       await evaluate(`window.__vs.setLayout('${mode}')`)

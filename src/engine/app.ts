@@ -6,6 +6,7 @@ import {
 } from './instruments'
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
 import { importClip } from './media'
+import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
 import { Performer, type InstrumentState, type PlayEvent } from './performer'
 import { Stage } from './stage'
 import { createStore } from './store'
@@ -25,6 +26,7 @@ export interface AppState {
   aspect: StageAspect
   fit: boolean
   octave: number
+  scale: ScaleSetting
   velocity: number
   active: number[]
   recording: boolean
@@ -44,7 +46,7 @@ const initial = (): AppState => ({
   clips: [], importing: null, kind: 'clip',
   clip: defaultClipParams(), pads: defaultPadsParams(), layers: defaultLayersParams(), bendRange: 2,
   layouts: { clip: 'gallery', pads: 'home', layers: 'gallery' }, aspect: '16:9', fit: false,
-  octave: 0, velocity: 100, active: [], recording: false, take: null, playing: false,
+  octave: 0, scale: defaultScale(), velocity: 100, active: [], recording: false, take: null, playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
 })
 
@@ -128,9 +130,37 @@ export class App {
     this.performer.play(ev, scheduleTime(this.ctx, timeStamp, this.latencyMs()))
   }
 
+  // chord mode: a key's notes, and how many held keys hold each note (shared chord tones)
+  private chords = new Map<number, number[]>()
+  private held = new Map<number, number>()
+
   handlers: InputHandlers = {
-    noteOn: (note, vel, ts) => { this.play({ type: 'on', note, vel }, ts); this.store.set((s) => ({ active: [...s.active.filter((n) => n !== note), note] })) },
-    noteOff: (note, ts) => { this.play({ type: 'off', note }, ts); this.store.set((s) => ({ active: s.active.filter((n) => n !== note) })) },
+    noteOn: (key, vel, ts) => {
+      const s = this.store.get()
+      const melodic = s.kind !== 'pads'
+      const root = melodic && s.scale.lock ? snap(key, s.scale) : key
+      const notes = melodic ? chordNotes(root, s.scale) : [key]
+      if (this.chords.has(key)) this.handlers.noteOff(key, ts) // a retrigger releases the old chord first
+      this.chords.set(key, notes)
+      for (const n of notes) {
+        this.held.set(n, (this.held.get(n) ?? 0) + 1)
+        this.play({ type: 'on', note: n, vel }, ts)
+      }
+      this.store.set((x) => ({ active: [...x.active.filter((n) => !notes.includes(n)), ...notes] }))
+    },
+    noteOff: (key, ts) => {
+      const notes = this.chords.get(key) ?? [key]
+      this.chords.delete(key)
+      const off: number[] = []
+      for (const n of notes) {
+        const c = (this.held.get(n) ?? 1) - 1
+        if (c > 0) { this.held.set(n, c); continue }
+        this.held.delete(n)
+        off.push(n)
+        this.play({ type: 'off', note: n }, ts)
+      }
+      this.store.set((x) => ({ active: x.active.filter((n) => !off.includes(n)) }))
+    },
     sustain: (down, ts) => this.play({ type: 'sustain', down }, ts),
     bend: (value, ts) => this.play({ type: 'bend', value }, ts),
     modWheel: (value, ts) => this.setMacro(0, value, ts),
@@ -147,6 +177,7 @@ export class App {
       return {
         mode: s.kind === 'pads' ? 'pads' : 'notes',
         baseNote: () => (s.kind === 'pads' ? this.bankBase() : 60 + 12 * s.octave),
+        keyNote: s.kind !== 'pads' && s.scale.lock ? (code: string) => keyNote(code, 60 + 12 * s.octave, s.scale) : undefined,
         velocity: () => s.velocity,
         octave: (d) => this.store.set((x) => ({ octave: Math.max(-5, Math.min(4, x.octave + d)) })),
         velocityStep: (d) => this.store.set((x) => ({ velocity: Math.max(1, Math.min(127, x.velocity + d)) })),
@@ -240,6 +271,8 @@ export class App {
   }
 
   /** The keyboard follows the clip: the QWERTY octave moves so the clip's home key is on the home row. */
+  setScale(p: Partial<ScaleSetting>) { this.panic(); this.store.set((s) => ({ scale: { ...s.scale, ...p } })) }
+
   followHome() {
     const s = this.store.get()
     const clip = s.clips.find((c) => c.id === s.clip.clipId)

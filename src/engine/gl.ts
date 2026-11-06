@@ -123,10 +123,12 @@ layout(location=0) in vec2 corner;
 layout(location=1) in vec4 rect;   // x, y, w, h in pixels, origin top-left
 layout(location=2) in vec4 voice;  // q (source frame), W (shutter in frames), alpha, rotation (0..3 quarter turns clockwise)
 layout(location=3) in vec4 crop;   // u0, v0, u1, v1, in display orientation
+layout(location=4) in vec4 style;  // corner radius px, border px, -, -
 uniform vec2 stage;
-out vec2 uv; flat out vec3 s;
+out vec2 uv; out vec2 lp; flat out vec3 s; flat out vec4 st;
 void main() {
   vec2 p = rect.xy + corner * rect.zw;
+  lp = corner * rect.zw; st = vec4(rect.zw, style.xy);
   gl_Position = vec4(p.x / stage.x * 2.0 - 1.0, 1.0 - p.y / stage.y * 2.0, 0.0, 1.0);
   vec2 d = mix(crop.xy, crop.zw, corner);           // display-space uv
   int r = int(voice.w + 0.5);                        // stored frame shown turned r quarter turns clockwise
@@ -136,9 +138,10 @@ void main() {
 
 const FS = `#version 300 es
 precision highp float; precision highp sampler2DArray;
-uniform sampler2DArray frames; uniform float count; uniform int maxTaps;
-in vec2 uv; flat in vec3 s; out vec4 o;
+uniform sampler2DArray frames; uniform float count; uniform int maxTaps; uniform vec3 border;
+in vec2 uv; in vec2 lp; flat in vec3 s; flat in vec4 st; out vec4 o;
 float wrapLayer(float l) { return clamp(mod(l, count), 0.0, count - 1.0); }
+float sdRound(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 void main() {
   float q = s.x, W = s.y;
   vec3 c;
@@ -154,7 +157,12 @@ void main() {
     }
     c /= float(K);
   }
-  o = vec4(c * s.z, s.z);
+  // the tile's frame (production.md §3 A): rounded corners, an optional border, antialiased
+  vec2 hs = st.xy * 0.5;
+  float d = sdRound(lp - hs, hs, min(st.z, min(hs.x, hs.y)));
+  if (st.w > 0.0) c = mix(c, border, clamp(d + st.w + 0.5, 0.0, 1.0));
+  float a = s.z * clamp(0.5 - d, 0.0, 1.0);
+  o = vec4(c * a, a);
 }`
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string) {
@@ -165,10 +173,10 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   return sh
 }
 
-export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number]; rot?: number }
+export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number]; rot?: number; radius?: number; border?: number }
 export type Blend = 'normal' | 'screen' | 'add'
 
-const STRIDE = 12
+const STRIDE = 16
 
 export class Collage {
   private p: WebGLProgram
@@ -189,7 +197,7 @@ export class Collage {
     gl.linkProgram(p)
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link')
     this.p = p
-    this.u = Object.fromEntries(['stage', 'frames', 'count', 'maxTaps'].map((n) => [n, gl.getUniformLocation(p, n)]))
+    this.u = Object.fromEntries(['stage', 'frames', 'count', 'maxTaps', 'border'].map((n) => [n, gl.getUniformLocation(p, n)]))
     this.vao = gl.createVertexArray()!
     gl.bindVertexArray(this.vao)
     const cb = gl.createBuffer()
@@ -201,7 +209,7 @@ export class Collage {
     this.ib = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ib)
     gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW)
-    for (const [loc, off] of [[1, 0], [2, 16], [3, 32]] as const) {
+    for (const [loc, off] of [[1, 0], [2, 16], [3, 32], [4, 48]] as const) {
       gl.enableVertexAttribArray(loc)
       gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, STRIDE * 4, off)
       gl.vertexAttribDivisor(loc, 1)
@@ -216,12 +224,12 @@ export class Collage {
     gl.clear(gl.COLOR_BUFFER_BIT)
   }
 
-  draw(arr: TexArray, tiles: Tile[], width: number, height: number, blend: Blend = 'normal', maxTaps = 8) {
+  draw(arr: TexArray, tiles: Tile[], width: number, height: number, blend: Blend = 'normal', maxTaps = 8, borderRGB: [number, number, number] = [0.95, 0.94, 0.9]) {
     const gl = this.gl, n = Math.min(tiles.length, this.max)
     if (!n) return
     for (let i = 0; i < n; i++) {
       const t = tiles[i], o = i * STRIDE
-      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, t.rot ?? 0, ...t.crop], o)
+      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, t.rot ?? 0, ...t.crop, t.radius ?? 0, t.border ?? 0, 0, 0], o)
     }
     gl.viewport(0, 0, width, height)
     gl.enable(gl.BLEND)
@@ -232,6 +240,7 @@ export class Collage {
     gl.uniform2f(this.u.stage, width, height)
     gl.uniform1f(this.u.count, arr.layers)
     gl.uniform1i(this.u.maxTaps, maxTaps)
+    gl.uniform3f(this.u.border, borderRGB[0], borderRGB[1], borderRGB[2])
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, arr.tex)
     gl.uniform1i(this.u.frames, 0)

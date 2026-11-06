@@ -27,6 +27,7 @@ export interface InputHandlers {
 export interface KeyContext {
   mode: 'notes' | 'pads'
   baseNote: () => number // the note A plays (notes mode) or the bank's first pad (pads mode)
+  keyNote?: (code: string) => number | null // scale lock: the note a key plays (null: not a note key)
   velocity: () => number
   octave(delta: number): void
   velocityStep(delta: number): void
@@ -55,8 +56,11 @@ export function attachKeyboard(h: InputHandlers, ctx: () => KeyContext): () => v
       if (e.code === 'KeyX') { k.octave(1); return }
       if (e.code === 'KeyC') { k.velocityStep(-20); return }
       if (e.code === 'KeyV') { k.velocityStep(20); return }
-      const i = NOTE_KEYS.indexOf(e.code)
-      if (i >= 0) note = k.baseNote() + i
+      if (k.keyNote) note = k.keyNote(e.code)
+      else {
+        const i = NOTE_KEYS.indexOf(e.code)
+        if (i >= 0) note = k.baseNote() + i
+      }
     }
     if (note === null || note < 0 || note > 127) return
     e.preventDefault()

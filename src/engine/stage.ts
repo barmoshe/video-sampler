@@ -14,6 +14,19 @@ export interface DrawOptions {
   maxTaps?: number
   fit?: boolean
   displayFps?: number
+  look?: Look
+}
+
+/** How tiles are framed (production.md §3 A). Sizes are fractions of the stage's short side. */
+export interface Look { gap: number; radius: number; border: number; borderRGB: [number, number, number]; pop: number }
+export const CLEAN_LOOK: Look = { gap: 0.006, radius: 0.014, border: 0, borderRGB: [0.95, 0.94, 0.9], pop: 0.07 }
+
+/**
+ * What the eye sees of a voice's level: fully there until −36 dB, then gone by −60 dB, so a
+ * release reads as long as it sounds (math §6) without turning grey for seconds.
+ */
+export function shown(alpha: number): number {
+  return Math.max(0, Math.min(1, alpha / 0.4))
 }
 
 export class Stage {
@@ -50,7 +63,7 @@ export class Stage {
       if (!clip) continue
       const q = positionAt(v, t, clip.duration)
       if (q === null) continue
-      const alpha = opacity(gainAt(v, t))
+      const alpha = shown(opacity(gainAt(v, t)))
       if (alpha <= 0.002) continue
       const r = rateAt(v, t)
       const order = o.mode === 'home' ? Number(v.cell.split(':')[1]) - (o.homeBase ?? 36) : v.note
@@ -61,11 +74,15 @@ export class Stage {
       c.pieces.push({ v, clip, q: q * clip.fps, W: r * 0.5 * (clip.fps / dispFps), alpha })
       cells.set(v.cell, c)
     }
-    if (o.mode === 'home' && o.homeCells) for (const h of o.homeCells) if (!cells.has(h.key)) cells.set(h.key, { order: h.order, weight: 0, born: 0, pieces: [] })
+    if (o.mode === 'home' && o.homeCells) for (const h of o.homeCells) if (h.clipId && !cells.has(h.key)) cells.set(h.key, { order: h.order, weight: 0, born: 0, pieces: [] })
     const cellList: CellIn[] = [...cells].map(([key, c]) => ({ key, order: c.order, weight: c.weight, born: c.born }))
     const firstAspect = [...cells.values()].find((c) => c.pieces.length)?.pieces[0].clip.aspect ?? 16 / 9
     const rects = this.layout.update(o.mode, cellList, W, H, firstAspect, now, dt || 1 / dispFps)
 
+    const look = o.look ?? CLEAN_LOOK, short = Math.min(W, H)
+    const framed = o.mode !== 'stack'
+    const gap = framed ? Math.round(look.gap * short) : 0, radius = framed ? look.radius * short : 0, border = framed ? look.border * short : 0
+    const frame = (r: { x: number; y: number; w: number; h: number }) => ({ ...inset(r, gap / 2), radius, border })
     this.collage.clear(W, H, o.background)
     const groups = new Map<TexArray, Tile[]>()
     const push = (arr: TexArray, tile: Tile) => { const g = groups.get(arr) ?? []; g.push(tile); groups.set(arr, g) }
@@ -76,7 +93,7 @@ export class Stage {
       const cf = this.cache.clips.get(h.clipId)
       if (!cf) continue
       const shown = cf.rotation % 180 ? 1 / cf.aspect : cf.aspect
-      push(cf.S, { ...inset(r), q: cf.poster, W: 0, alpha: 0.22, crop: o.fit ? [0, 0, 1, 1] : fillCrop(shown, r.w / r.h), rot: cf.rotation / 90 })
+      push(cf.S, { ...frame(r), q: cf.poster, W: 0, alpha: 0.22, crop: o.fit ? [0, 0, 1, 1] : fillCrop(shown, r.w / r.h), rot: cf.rotation / 90 })
     }
     for (const [key, c] of cells) {
       const r = rects.get(key)
@@ -85,16 +102,25 @@ export class Stage {
         const cf = this.cache.clips.get(p.clip.id)
         if (!cf) continue
         const arr = cf.M && r.w > 300 ? cf.M : cf.S
-        push(arr, { ...(o.mode === 'home' || o.mode === 'gallery' ? inset(r) : r), q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, r.w / r.h), rot: cf.rotation / 90 })
+        // the hit lands in the picture: a short pop on the attack (velocity), a small shrink as it fades
+        const since = t - p.v.on
+        const k = (1 + look.pop * (p.v.vel / 127) * Math.exp(-since / 0.09)) * (t > p.v.off ? 0.94 + 0.06 * p.alpha : 1)
+        const fr = framed ? frame(scaleRect(r, k)) : { ...r, radius: 0, border: 0 }
+        push(arr, { ...fr, q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, fr.w / Math.max(1, fr.h)), rot: cf.rotation / 90 })
       }
     }
     const blend: Blend = o.mode === 'stack' ? 'screen' : 'normal'
-    for (const [arr, tiles] of groups) this.collage.draw(arr, tiles, W, H, blend, o.maxTaps ?? 8)
+    for (const [arr, tiles] of groups) this.collage.draw(arr, tiles, W, H, blend, o.maxTaps ?? 8, look.borderRGB)
     return cellList.filter((c) => c.weight > 0).length
   }
 }
 
-/** A hairline gap between tiles (1px on each side). */
-function inset(r: { x: number; y: number; w: number; h: number }) {
-  return { x: r.x + 1, y: r.y + 1, w: Math.max(0, r.w - 2), h: Math.max(0, r.h - 2) }
+/** A gap of g pixels on each side. */
+function inset(r: { x: number; y: number; w: number; h: number }, g: number) {
+  return { x: r.x + g, y: r.y + g, w: Math.max(0, r.w - 2 * g), h: Math.max(0, r.h - 2 * g) }
+}
+
+/** Scale a rectangle about its centre. */
+function scaleRect(r: { x: number; y: number; w: number; h: number }, k: number) {
+  return { x: r.x + (r.w * (1 - k)) / 2, y: r.y + (r.h * (1 - k)) / 2, w: r.w * k, h: r.h * k }
 }

@@ -23,6 +23,26 @@ export function gallery(n: number, W: number, H: number, a: number): Rect[] {
   })
 }
 
+/**
+ * Home grid (Pads): each pad keeps its place in the 4×4 block (bottom row = the bank's first four),
+ * but only the rows and columns that hold a loaded pad take space, so two pads fill the stage
+ * instead of sitting in one corner of an empty grid.
+ */
+export function homeGrid(orders: number[], W: number, H: number, a: number): Map<number, Rect> {
+  const valid = orders.filter((o) => o >= 0 && o < 16)
+  const rows = [...new Set(valid.map((o) => Math.floor(o / 4)))].sort((x, y) => x - y)
+  const cols = [...new Set(valid.map((o) => o % 4))].sort((x, y) => x - y)
+  const out = new Map<number, Rect>()
+  if (!valid.length) return out
+  const tw = Math.min(W / cols.length, (H / rows.length) * a), th = tw / a
+  const ox = (W - cols.length * tw) / 2, oy = (H - rows.length * th) / 2
+  for (const o of valid) {
+    const ci = cols.indexOf(o % 4), ri = rows.indexOf(Math.floor(o / 4))
+    out.set(o, { x: ox + ci * tw, y: oy + (rows.length - 1 - ri) * th, w: tw, h: th })
+  }
+  return out
+}
+
 /** math §4.2: squarified treemap (Bruls, Huizing, van Wijk 2000) in input order (ordered: moves less). */
 export function treemap(weights: number[], W: number, H: number): Rect[] {
   const total = weights.reduce((a, b) => a + b, 0) || 1
@@ -61,10 +81,12 @@ function worstRatio(areas: number[], side: number): number {
 export function targets(mode: LayoutMode, cells: CellIn[], W: number, H: number, tileAspect: number, capacity: number): Map<string, Rect> {
   const out = new Map<string, Rect>()
   const sorted = [...cells].sort((a, b) => a.order - b.order || a.born - b.born)
-  if (mode === 'gallery' || mode === 'home') {
-    const slots = mode === 'home' ? gallery(16, W, H, W / H >= 1 ? 16 / 9 : 9 / 16).slice(0, 16) : gallery(Math.max(capacity, sorted.length), W, H, tileAspect)
-    if (mode === 'home') sorted.forEach((c) => { const s = c.order >= 0 && c.order < 16 ? slots[c.order] : undefined; if (s) out.set(c.key, s) })
-    else sorted.forEach((c, i) => out.set(c.key, slots[i]))
+  if (mode === 'home') {
+    const slots = homeGrid(sorted.map((c) => c.order), W, H, tileAspect)
+    for (const c of sorted) { const s = slots.get(c.order); if (s) out.set(c.key, s) }
+  } else if (mode === 'gallery') {
+    const slots = gallery(Math.max(capacity, sorted.length), W, H, tileAspect)
+    sorted.forEach((c, i) => out.set(c.key, slots[i]))
   } else if (mode === 'keys') {
     let lo = Math.min(...sorted.map((c) => c.order)), hi = Math.max(...sorted.map((c) => c.order))
     const mid = (lo + hi) / 2, span = Math.max(24, hi - lo + 4)
