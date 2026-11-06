@@ -434,10 +434,10 @@ def mallet(C, mats, name, tip_pt, u, length=0.34, head_r=0.017, head_mat=None, s
     grip = hc + u * length
     piv = empty(name + "_pivot", grip)
     hd = finish(name + "_head", _sphere_me(name + "_head", head_r), head_mat or mats["yarn"], loc=hc, sharp=None)
-    sh = rod(name + "_shaft", hc, grip, shaft_r, shaft_mat or mats["rattan"])
+    sh = rod(name + "_shaft", hc, grip, shaft_r, shaft_mat or mats["graphite"])
     cap = rod(name + "_cap", grip - u * 0.012, grip + u * 0.004, shaft_r * 1.25, mats["rubber"])
     for o in (hd, sh, cap): keep_parent(o, piv)
-    C.fit += [hd, sh]
+    C.fit += [hd]
     C.stick_lift(piv, n, tip_pt, angle, rise)
     return piv
 
@@ -449,10 +449,10 @@ def stick(C, mats, name, tip_pt, u, length=0.40, contact_normal=(0, 0, 1), angle
     grip = tc + u * length
     piv = empty(name + "_pivot", grip)
     tip = rod(name + "_tip", tc - u * 0.004, tc + u * 0.004, 0.0058, tip_mat or mats["orange"])
-    neck = rod(name + "_neck", tc + u * 0.003, tc + u * 0.085, 0.0032, mats["hickory"], r1=0.0068, mids=3)
-    body = rod(name + "_body", tc + u * 0.08, grip, 0.0068, mats["hickory"], r1=0.0072)
+    neck = rod(name + "_neck", tc + u * 0.003, tc + u * 0.085, 0.0032, mats["graphite"], r1=0.0068, mids=3)
+    body = rod(name + "_body", tc + u * 0.08, grip, 0.0068, mats["graphite"], r1=0.0072)
     for o in (tip, neck, body): keep_parent(o, piv)
-    C.fit += [tip, neck, body]
+    C.fit += [tip]
     C.stick_lift(piv, n, tip_pt, angle, rise)
     return piv
 
@@ -507,8 +507,8 @@ def bar_instrument(C, mats, *, L, W, T, bar_mat, top_z, res_len, res_r, res_mat,
         for sx in (-1, 1):
             x = sx * (W / 2 + 0.05)
             parts.append(rod(f"post{sy}{sx}", (x, y, rail_top), (x, y, top_z - T * 0.2), 0.0035, mats["graphite_metal"]))
-            leg = rod(f"leg{sy}{sx}", (x, y, 0.006), (x, y, rail_top - 0.03), 0.0075, mats["graphite_metal"], kind="cyl")
-            foot = lathe(f"foot{sy}{sx}", [(0, 0), (0.014, 0), (0.016, 0.003), (0.012, 0.008), (0, 0.008)], mats["rubber"],
+            leg = rod(f"leg{sy}{sx}", (x, y, 0.006), (x, y, rail_top - 0.03), 0.0105, mats["graphite_metal"], kind="cyl")
+            foot = lathe(f"foot{sy}{sx}", [(0, 0), (0.017, 0), (0.019, 0.003), (0.015, 0.009), (0, 0.009)], mats["rubber"],
                          segs=24, loc=(x, y, 0))
             parts += [leg, foot]
             C.ground.append(foot)
@@ -530,31 +530,31 @@ def bar_instrument(C, mats, *, L, W, T, bar_mat, top_z, res_len, res_r, res_mat,
             parts.append(rod(f"hole{sy}", (-W / 2 - 0.0005, sy * nodes_y, top_z - T / 2), (W / 2 + 0.0005, sy * nodes_y, top_z - T / 2),
                              0.0024, mats["graphite"], kind="cyl"))
     hit = Vector((0, 0.012, top_z))
-    env = add_glow(bar.data.materials[0], local_pt(bar, hit), radius=L * 0.32)
-    C.glow(env, gain=5.0)
+    env = add_glow(bar.data.materials[0], local_pt(bar, hit), radius=L * 0.13)
+    C.glow(env, gain=2.2)
     C.ring(bar.data.shape_keys.key_blocks["bend"], 9.0, power=1.2)
     for p in parts: p.parent = grp
     C.fit += parts
-    mallet(C, mats, "mallet", hit, (0.35, 0.75, 0.62), length=0.30, head_r=mallet_r, head_mat=mallet_mat, angle=30)
+    mallet(C, mats, "mallet", hit, (0.30, 0.80, 0.45), length=0.24, head_r=mallet_r, head_mat=mallet_mat, angle=12)
     return bar
 
 
 def build_marimba(C, mats):
-    wood = grain(mat("rosewood", "#6E3D2E", 0.42, coat=0.35, coat_rough=0.2), "#7A4634", "#55301F", scale=22, along="Y", across="X")
-    bar_instrument(C, mats, L=0.38, W=0.058, T=0.022, bar_mat=wood, top_z=0.33, res_len=0.22, res_r=0.032,
+    wood = grain(mat("rosewood", "#6E3D2E", 0.45, coat=0.15, coat_rough=0.3), "#7A4634", "#55301F", scale=22, along="Y", across="X")
+    bar_instrument(C, mats, L=0.38, W=0.058, T=0.022, bar_mat=wood, top_z=0.20, res_len=0.12, res_r=0.032,
                    res_mat=mats["graphite_metal"], mallet_mat=mats["yarn"], mallet_r=0.017, arch=0.008)
 
 
 def build_vibraphone(C, mats):
     alu = mat("aluminium", "#C9CBCE", 0.3, 1.0, aniso=0.5)
     gold = mat("gold_anod", "#C8A867", 0.3, 1.0)
-    bar_instrument(C, mats, L=0.30, W=0.050, T=0.013, bar_mat=alu, top_z=0.36, res_len=0.27, res_r=0.030,
+    bar_instrument(C, mats, L=0.30, W=0.050, T=0.013, bar_mat=alu, top_z=0.22, res_len=0.14, res_r=0.030,
                    res_mat=gold, mallet_mat=mats["orange"], mallet_r=0.015, arch=0.0035, holes=True)
 
 
 def build_xylophone(C, mats):
     wood = grain(mat("padauk", "#9A5638", 0.38, coat=0.45, coat_rough=0.15), "#A65E3E", "#7E4229", scale=20, along="Y", across="X")
-    bar_instrument(C, mats, L=0.22, W=0.042, T=0.024, bar_mat=wood, top_z=0.26, res_len=0.13, res_r=0.026,
+    bar_instrument(C, mats, L=0.22, W=0.042, T=0.024, bar_mat=wood, top_z=0.16, res_len=0.08, res_r=0.026,
                    res_mat=mats["graphite_metal"], mallet_mat=mats["orange"], mallet_r=0.012, arch=0.006)
 
 
@@ -562,7 +562,7 @@ def build_balafon(C, mats):
     wood = grain(mat("balafon_wood", "#8A5C3C", 0.6), "#94643F", "#6C4529", scale=12, along="Y", across="X", distort=9)
     gourd = grain(mat("gourd", "#A97A45", 0.55, coat=0.2), "#B08048", "#8C6034", scale=6, along="Z", across="X", distort=3, bump=0.03)
     bamboo = grain(mat("bamboo", "#C4AA70", 0.45, coat=0.2), "#CBB37A", "#A88F57", scale=30, along="X", across="Y", bump=0.02)
-    bar_instrument(C, mats, L=0.30, W=0.050, T=0.020, bar_mat=wood, top_z=0.34, res_len=0, res_r=0, res_mat=None,
+    bar_instrument(C, mats, L=0.30, W=0.050, T=0.020, bar_mat=wood, top_z=0.272, res_len=0, res_r=0, res_mat=None,
                    mallet_mat=mat("ball", ORANGE, 0.8), mallet_r=0.016, arch=0.004, gourd=gourd, rails_mat=bamboo)
 
 
@@ -607,7 +607,7 @@ def drum(C, mats, name, R, H, shell_mat, hoop_mat, lug_mat, hit_xy, lugs=10, hea
 def build_snare(C, mats):
     R, H = 0.178, 0.135
     hit_xy = (0.035, -0.06)
-    hd, zh = drum(C, mats, "snare", R, H, mats["steel"], mats["chrome"], mats["chrome"], hit_xy, lugs=10)
+    hd, zh = drum(C, mats, "snare", R, H, mat("black_nickel", "#45464B", 0.3, 1.0), mats["chrome"], mats["chrome"], hit_xy, lugs=10)
     C.ground.append(bpy.data.objects["snare_hoop_bot"])
     strainer = box("strainer", (0.02, 0.012, 0.05), mats["graphite"], bevel=0.002,
                    loc=(math.cos(-1.2) * (R + 0.012), math.sin(-1.2) * (R + 0.012), 0.08), rot=(0, 0, -1.2))
@@ -616,9 +616,9 @@ def build_snare(C, mats):
     C.fit += [strainer, lever]
     C.drum_head(hd, hz=8.0, hz2=6.1)
     hit = Vector((hit_xy[0], hit_xy[1], zh))
-    C.glow(add_glow(hd.data.materials[0], local_pt(hd, hit), 0.11), gain=5.0)
+    C.glow(add_glow(hd.data.materials[0], local_pt(hd, hit), 0.06), gain=2.2)
     # the wires rattle: the whole drum buzzes a little while the sound lasts
-    stick(C, mats, "stick", hit, (0.25, 0.75, 0.58), angle=24)
+    stick(C, mats, "stick", hit, (0.25, 0.75, 0.50), angle=12)
 
 
 def build_cymbal(C, mats, R=0.215, top=0.30, tilt=12.0, mallet_hit=True, name="cymbal"):
@@ -639,10 +639,10 @@ def build_cymbal(C, mats, R=0.215, top=0.30, tilt=12.0, mallet_hit=True, name="c
     edge_local = Vector((R * 0.94 * math.cos(a), R * 0.94 * math.sin(a), 0.0005 - 0.04))
     hit = world_pt(piv, edge_local)
     nrm = (piv.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
-    C.glow(add_glow(bronze, edge_local, 0.12), gain=6.0)
+    C.glow(add_glow(bronze, edge_local, 0.07), gain=2.5)
     C.wobble(piv, 7.0, 2.3, power=1.2)
     if mallet_hit:
-        mallet(C, mats, "mallet", hit, (0.55, 0.45, 0.70), length=0.30, head_r=0.018, angle=30, contact_normal=nrm)
+        mallet(C, mats, "mallet", hit, (0.55, 0.45, 0.55), length=0.26, head_r=0.018, angle=12, contact_normal=nrm)
     return piv, cym
 
 
@@ -715,7 +715,15 @@ def studio(C, objs):
         if hasattr(L.data, "use_shadow_jitter"): L.data.use_shadow_jitter = True   # house numbers, then the pack's balance: a softer key, a lifted fill, a thin rim
         role = L.name
         L.data.energy *= {"key": 1.0, "fill": 1.4, "rim": 0.9, "top": 0.6}.get(role, 1.0)
-    bb.world("#ffffff", 0.18)
+    # a wash on the backdrop so the top of the frame stays off-white, not grey
+    c = Vector((CAM_DIR.x, CAM_DIR.y, 0)).normalized()
+    wash = link(bpy.data.objects.new("wash", bpy.data.lights.new("wash", "AREA")))
+    wash.data.size, wash.data.color = 5 * S, (1.0, 1.0, 1.0)
+    wash.location = centre + c * (1.5 * S) + Vector((0, 0, 3.5 * S))
+    target = centre - c * (3.4 * S) + Vector((0, 0, 1.6 * S))
+    wash.data.energy = 18.0 * (wash.location - target).length ** 2 * 0.9
+    bb.look_at(wash, target)
+    bb.world("#ffffff", 0.22)
     return cam, sw, S
 
 
@@ -727,12 +735,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--audio", default=os.path.join(REPO, "assets-src", "audio"))
     ap.add_argument("--size", default="960x540")
-    ap.add_argument("--samples", type=int, default=40)
+    ap.add_argument("--samples", type=int, default=64)
     ap.add_argument("--frames", default="all")
     ap.add_argument("--views", action="store_true")
-    ap.add_argument("--no-blur", action="store_true")
+    ap.add_argument("--blur", action="store_true")
     ap.add_argument("--bounces", type=int, default=3)
-    ap.add_argument("--engine", default="CYCLES", choices=["CYCLES", "EEVEE"])
+    ap.add_argument("--engine", default="EEVEE", choices=["CYCLES", "EEVEE"])
     a = ap.parse_args(sys.argv[1:])
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
@@ -752,8 +760,9 @@ def main():
             if hasattr(ee, k): setattr(ee, k, v)
     sc.render.use_persistent_data = True
     sc.render.fps = FPS
-    sc.render.use_motion_blur = not a.no_blur
-    sc.render.motion_blur_shutter = 0.4
+    sc.render.use_motion_blur = a.blur
+    sc.view_settings.exposure = -0.5
+    sc.render.motion_blur_shutter = 0.3
 
     C = Clip(a.id, env)
     mats = M()
