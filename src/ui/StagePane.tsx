@@ -56,6 +56,7 @@ export function StagePane({ onCamera }: { onCamera: () => void }) {
             <div className="row">
               <button type="button" className="btn primary" onClick={() => file.current?.click()}>Choose a video</button>
               <button type="button" className="btn" onClick={onCamera}>Record with the camera</button>
+              <button type="button" className="btn" onClick={() => void app.loadDemo()}>Try a demo clip</button>
             </div>
             <p className="small">Or drop a video (or a .mid file) anywhere here. Then play with the keys A to ' or a MIDI keyboard. Your clips stay on this computer.</p>
           </div>

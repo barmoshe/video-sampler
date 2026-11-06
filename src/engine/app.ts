@@ -189,6 +189,19 @@ export class App {
     }
   }
 
+  /** A clip made in the browser for a first visit (no video needed). */
+  async loadDemo() {
+    this.store.set({ importing: { name: 'Demo voice', progress: 0, stage: 'Making a demo clip' } })
+    try {
+      const { makeDemoClip } = await import('./demo')
+      const file = await makeDemoClip((p) => this.store.set({ importing: { name: 'Demo voice', progress: p * 0.5, stage: 'Making a demo clip' } }))
+      await this.importFiles([file])
+    } catch (e) {
+      this.store.set({ importing: null })
+      this.say(`Could not make the demo clip: ${(e as Error).message}`)
+    }
+  }
+
   /** A new clip goes where the player is working: the Clip, a pad, or a new layer. */
   private assign(clip: Clip, target?: { pad?: number; layer?: string }) {
     const s = this.store.get()

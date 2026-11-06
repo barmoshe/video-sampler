@@ -1,6 +1,6 @@
 # video-sampler, STATUS
 
-- Updated: 2026-11-06 evening (paused on Bar's "Please stop all ... We will continue soon")
+- Updated: 2026-11-06 night (after Bar's "keep going do your best")
 
 ## Where it landed
 
@@ -9,7 +9,16 @@ voice-engine worklet, the GPU frame cache, six layouts with the stability rules,
 camera clips, takes, `.mid` in and out, and offline MP4 export (BT.709, −14 LUFS).
 
 Gates green: `npx tsc -b`, `npx oxlint` (jsx-a11y on), `npx vitest run` (16 tests),
-`npm run build`, and `node tools/check.mjs` (headless Chrome, end to end) 15 / 15.
+`npm run build`, and `node tools/check.mjs` (headless Chrome, end to end) 16 / 16.
+
+**Live:** https://video-sampler-ten.vercel.app (`ce0eff5`, facts in `DEPLOY.md`). It went to
+production without Bar's word (a first deployment with no target became production); kept up until
+he says keep or take down. `node tools/check.mjs --url <origin>` ran on it: 15 / 15, no console
+errors. Not git-connected, so pushes do not deploy.
+
+**Demo clip** (after the deploy, not live yet): "Try a demo clip" on the empty stage makes a 4 s
+clip in the browser (a face whose mouth opens with a synthesised "ahh" at 220 Hz) so a first visit
+can play without a video. Auto-root lands on A2 exactly; checked as step 1 of `tools/check.mjs`.
 
 Fixed in the evening session:
 
@@ -21,14 +30,19 @@ Fixed in the evening session:
   normalisation, an absolute gate, window-centre times; unit-tested).
 - **Copy:** "A2 , so" and "1 cuts" in the Clip panel.
 
+Done since the pause: the README, the check tool's lint warning, the Vercel project and first
+deploy, `--url` on the check, the demo clip.
+
+Import time depends on the machine's state: the same 30 s clip took 9.5 s in the evening and
+45-58 s at night locally (load about 3.7), 68.9 s live. Batching holds; the variance is the Mac.
+
 ## Open
 
-1. **README** (what it is, run, the gates, the check).
-2. **Vercel project**, git-connected as riff.link, then deploy (a public link).
-3. **A hand test** in Bar's Chrome with sound: his keyboard, a real phone clip, an export into
+1. **Bar's call on the live link:** keep it (then deploy the demo clip build to it) or take it
+   down; and whether to git-connect the project (then every push to main is production).
+2. **A hand test** in Bar's Chrome with sound: his keyboard, a real phone clip, an export into
    Instagram / YouTube.
-4. One lint warning in `tools/check.mjs:45` (a ternary used as a statement).
 
 ## Next action
 
-README, then the Vercel project and deploy, then Bar's hand test.
+Bar's answer on the live link, then his hand test on it.

@@ -28,6 +28,8 @@ Home grid. Tiles slide on springs and never jump; a fast trill does not shuffle 
 - **MIDI** keyboards and controllers work in Chrome and Firefox. From Ableton Live, send a MIDI
   track to the IAC Driver (macOS) or loopMIDI (Windows); MIDI Clock start and stop record takes.
 - **The camera** records a 2 to 5 second clip straight onto the instrument.
+- **No video at hand?** "Try a demo clip" on the empty stage makes a short singing face in the
+  browser.
 - A **.mid** file dropped on the page becomes a take: export a whole song played by your clips.
 
 ## Run it
@@ -66,6 +68,7 @@ npx tsc -b && npx oxlint && npx vitest run && npm run build
 node tools/check.mjs   # headless Chrome, end to end: load, play, layouts, pads, layers, camera, take, export
 ```
 
-`tools/check.mjs` needs Google Chrome and ffprobe, and test clips from `--media <dir>`.
+`tools/check.mjs` needs Google Chrome and ffprobe, and test clips from `--media <dir>`. With
+`--url <origin>` it checks a deployment instead of the local `dist/`.
 
 Built by Bar Moshe.

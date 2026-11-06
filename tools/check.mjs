@@ -25,7 +25,8 @@ const server = createServer((req, res) => {
   createReadStream(p).pipe(res)
 }).listen(0, '127.0.0.1')
 await once(server, 'listening')
-const base = `http://127.0.0.1:${server.address().port}`
+const ui = process.argv.indexOf('--url') // check a deployment instead of the local dist/
+const base = ui > 0 ? process.argv[ui + 1].replace(/\/$/, '') : `http://127.0.0.1:${server.address().port}`
 
 const profile = mkdtempSync(join(tmpdir(), 'vs-check-'))
 const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--mute-audio',
@@ -88,6 +89,20 @@ try {
   await page('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 400, y: 300, button: 'left', clickCount: 1 })
   await shot('01-empty.png')
 
+  await step('the demo clip: made in the browser, tuned to 220 Hz (A2)', async () => {
+    const t0 = Date.now()
+    await evaluate('window.__vs.loadDemo()')
+    await until('window.__vs.store.get().clips.length === 1', 60000)
+    const r = await S('`root ${s.clips[0].root.toFixed(2)} (A2 = 57), ${s.clips[0].frames} frames`')
+    await evaluate('window.__vs.handlers.noteOn(60, 100, performance.now(), "keys"); window.__vs.handlers.noteOn(67, 100, performance.now(), "keys")')
+    await sleep(400)
+    await shot('00-demo.png')
+    await evaluate('window.__vs.handlers.noteOff(60, performance.now()); window.__vs.handlers.noteOff(67, performance.now())')
+    const root = await S('s.clips[0].root')
+    await evaluate('window.__vs.removeClip(window.__vs.store.get().clips[0].id)')
+    if (Math.abs(root - 57) > 0.2) throw new Error(r)
+    return `${((Date.now() - t0) / 1000).toFixed(1)} s, ${r}`
+  })
   await step('import a clip (30 s 1080p, frame barcode)', async () => {
     const t0 = Date.now()
     await setFiles([join(MEDIA, 'clip30.mp4')])

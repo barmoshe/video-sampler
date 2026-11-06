@@ -35,7 +35,8 @@ reads one store (`store.ts`, `app.ts`). Plain CSS in `src/styles/app.css`.
 - **Gates before every push:** `npx tsc -b`, `npx oxlint` (jsx-a11y on), `npx vitest run`,
   `npm run build`, and `node tools/check.mjs` (headless Chrome end to end) when the engine or UI
   changed. Test at 1470×832.
-- **Deploy = `git push` to `main`** once the Vercel project exists (not yet).
+- **Deploy:** facts in `DEPLOY.md`. The Vercel project is not git-connected, so a push does not
+  deploy; production only on Bar's word (ADR 0393), then `node tools/check.mjs --url <origin>`.
 
 ## State
 
