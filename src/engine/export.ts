@@ -1,0 +1,90 @@
+// Offline export (design §9, spike test 8): replay a take through the same instruments into an
+// OfflineAudioContext running the same worklet, draw every output frame from the same voice book
+// with the same stage, and mux to MP4 with Mediabunny. The spike's two QC findings are fixed here:
+// frames are tagged BT.709, and the mix is normalised to −14 LUFS behind a lookahead limiter.
+import { AudioBufferSource, BufferTarget, canEncodeAudio, Mp4OutputFormat, Output, VideoSample, VideoSampleSource } from 'mediabunny'
+import { AudioEngine } from './audio'
+import { normalise } from './loudness-out'
+import { Performer, type InstrumentState } from './performer'
+import type { Stage, DrawOptions } from './stage'
+import { LayoutEngine } from './layout'
+import type { Take } from './take'
+import type { Clip, LayoutMode, StageAspect } from './types'
+import type { EngineEvent } from './worklet/voice-engine'
+
+export interface ExportOptions { aspect: StageAspect; layout: LayoutMode; height: 720 | 1080; fps: 30 | 60 }
+
+export const SIZES: Record<StageAspect, [number, number]> = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1] }
+
+export function exportSize(aspect: StageAspect, short: number): [number, number] {
+  const [a, b] = SIZES[aspect]
+  const scale = short / Math.min(a, b)
+  return [Math.round((a * scale) / 2) * 2, Math.round((b * scale) / 2) * 2]
+}
+
+interface Deps {
+  state: InstrumentState
+  clips: Map<string, Clip>
+  levels: Map<string, { fwd: Float32Array[][]; rev: Float32Array[][] }>
+  stage: Stage
+  homeCells?: DrawOptions['homeCells']
+  homeBase?: number
+  fit: boolean
+}
+
+const LEAD = 0.1, TAIL = 1.5, FS = 48000
+const BT709: VideoColorSpaceInit = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false }
+
+export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress: (p: number, stage: string) => void): Promise<Blob> {
+  const seconds = LEAD + take.duration + TAIL
+  // ---- sound
+  const octx = new OfflineAudioContext(2, Math.ceil(seconds * FS), FS)
+  const engine = await AudioEngine.create(octx)
+  const used = new Set<string>()
+  const all: EngineEvent[] = []
+  const performer = new Performer(structuredClone(d.state), d.clips, { send: (evs) => { all.push(...evs) }, frameOf: (t) => Math.round(t * FS) })
+  for (const { t, ev } of take.events) performer.play(ev, LEAD + t)
+  for (const v of performer.book.voices) used.add(v.clipId)
+  for (const id of used) {
+    const lv = d.levels.get(id), clip = d.clips.get(id)
+    if (lv && clip) await engine.loadClip(id, clip.fs, lv.fwd, lv.rev)
+  }
+  await engine.events(all)
+  progress(0.02, 'Sound')
+  const rendered = await octx.startRendering()
+  const { buffer } = normalise(rendered)
+  progress(0.1, 'Picture')
+
+  // ---- picture, on the live stage's canvas and GPU cache (one GL context holds the frames)
+  const [W, H] = exportSize(o.aspect, o.height)
+  const canvas = d.stage.canvas
+  const keep = { w: canvas.width, h: canvas.height, layout: d.stage.layout }
+  d.stage.resize(W, H)
+  d.stage.layout = new LayoutEngine()
+  const target = new BufferTarget()
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target })
+  const video = new VideoSampleSource({ codec: 'avc', bitrate: W * H >= 1920 * 1080 ? 12e6 : 8e6, keyFrameInterval: 2 })
+  const audio = new AudioBufferSource({ codec: (await canEncodeAudio('aac')) ? 'aac' : 'opus', bitrate: 192e3 })
+  output.addVideoTrack(video, { frameRate: o.fps })
+  output.addAudioTrack(audio)
+  await output.start()
+  try {
+    await audio.add(buffer)
+    const frames = Math.ceil(seconds * o.fps)
+    const voices = performer.book.voices
+    for (let k = 0; k < frames; k++) {
+      const t = k / o.fps
+      d.stage.drawAt(t, t, voices, d.clips, { mode: o.layout, homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps })
+      const sample = new VideoSample(canvas, { timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })
+      await video.add(sample)
+      sample.close()
+      if (k % 15 === 0) progress(0.1 + (0.88 * k) / frames, 'Picture')
+    }
+    await output.finalize()
+  } finally {
+    d.stage.resize(keep.w, keep.h)
+    d.stage.layout = keep.layout
+  }
+  progress(1, 'Done')
+  return new Blob([target.buffer!], { type: 'video/mp4' })
+}
