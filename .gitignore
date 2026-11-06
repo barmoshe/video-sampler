@@ -33,3 +33,4 @@ tools/out/
 
 # library sources (raw CC0 downloads and prepared audio; the shipped pack is public/library/)
 assets-src/
+tools/library/render/out/
