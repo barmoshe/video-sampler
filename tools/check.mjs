@@ -171,6 +171,18 @@ try {
     if (n !== 3 || act !== '[50,53,57]') throw new Error(`${n} tiles, ${act}`)
     return `${n} tiles, notes ${act} (D2 F2 A2)`
   })
+  await step('filter: a closed low-pass with resonance and an LFO plays, and the tiles blur', async () => {
+    await evaluate("window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'lp', cutoff: 300, res: 0.6 }, lfo: { ...window.__vs.store.get().clip.lfo, filter: 1, volume: 0.3 } })")
+    for (const c of ['KeyA', 'KeyG']) await key(c, 'keyDown')
+    await sleep(500)
+    const n = await S('s.voices')
+    await shot('02c-filter-blur.png')
+    for (const c of ['KeyA', 'KeyG']) await key(c, 'keyUp')
+    await evaluate("window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'off', res: 0.15 }, lfo: { ...window.__vs.store.get().clip.lfo, filter: 0, volume: 0 } })")
+    await sleep(300)
+    if (n !== 2) throw new Error(`${n} tiles`)
+    return `${n} tiles through a 300 Hz low-pass`
+  })
   for (const mode of ['keys', 'stack', 'mosaic', 'spotlight']) {
     await step(`layout ${mode}`, async () => {
       await evaluate(`window.__vs.setLayout('${mode}')`)

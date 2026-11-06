@@ -23,7 +23,7 @@ function Chain({ c, sel, index }: { c: LayerChain; sel: number; index: number })
   return (
     <div className="chain" aria-label={`Layer ${index + 1}`}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span className="swatch" style={{ width: 22, height: 22, background: clip ? rgb(clip.poster) : 'transparent' }} />
+        {clip ? <img className="thumb" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} /> : <span className="thumb" />}
         <select aria-label={`Clip for layer ${index + 1}`} value={c.clipId ?? ''} onChange={(e) => set({ clipId: e.target.value || null })} style={{ flex: 1, background: 'var(--raise)', border: '1px solid var(--rule)', padding: 5 }}>
           <option value="">No clip</option>
           {clips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}

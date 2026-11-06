@@ -1,4 +1,4 @@
-import type { Env, Region } from './voice-math'
+import type { Env, FilterSpec, LfoSpec, Region } from './voice-math'
 
 /** A loaded clip: its sound (level 0 of the pyramid) and what analysis found. GL frames live in the FrameCache. */
 export interface Clip {
@@ -15,6 +15,7 @@ export interface Clip {
   root: number // fractional MIDI note the clip sounds at (auto-root), 60 if unpitched
   rootFound: boolean
   poster: [number, number, number] // dominant colour, 0..1
+  thumb: string // poster frame as an image URL (object URL), shown upright
   onsets: number[] // seconds
   cuts: number[] // seconds (scene changes)
   loudness: number // integrated LUFS (approx)
@@ -36,6 +37,8 @@ export interface NoteSpec {
   gate: boolean // false = plays to the end, ignores note-off
   mono: string | null // voices sharing this key cut each other (one-shot mono, slice mono)
   monoNote?: boolean // retrig: a new voice on the same note cuts the old one
+  filter?: FilterSpec // per-voice filter (absent = none)
+  lfo?: LfoSpec // per-voice LFO (absent = none)
 }
 
 /** A sounding (or fading) voice, as the main thread knows it. The picture is a pure function of this. */

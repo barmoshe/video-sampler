@@ -3,8 +3,8 @@
 import { Collage, FrameCache, createGL, fillCrop, type Blend, type Tile, type TexArray } from './gl'
 import { LayoutEngine, type CellIn } from './layout'
 import type { Clip, LayoutMode, Voice } from './types'
-import { gainAt, positionAt, rateAt } from './voicebook'
-import { opacity } from './voice-math'
+import { filterAt, gainAt, positionAt, rateAt } from './voicebook'
+import { filterTwin, opacity } from './voice-math'
 
 export interface DrawOptions {
   mode: LayoutMode
@@ -106,7 +106,9 @@ export class Stage {
         const since = t - p.v.on
         const k = (1 + look.pop * (p.v.vel / 127) * Math.exp(-since / 0.09)) * (t > p.v.off ? 0.94 + 0.06 * p.alpha : 1)
         const fr = framed ? frame(scaleRect(r, k)) : { ...r, radius: 0, border: 0 }
-        push(arr, { ...fr, q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, fr.w / Math.max(1, fr.h)), rot: cf.rotation / 90 })
+        const fc = filterAt(p.v, t)
+        const fx = p.v.filter ? filterTwin(p.v.filter, fc ?? 20000) : undefined
+        push(arr, { ...fr, fx, q: p.q, W: p.W, alpha: p.alpha, crop: o.fit ? [0, 0, 1, 1] : fillCrop(p.clip.aspect, fr.w / Math.max(1, fr.h)), rot: cf.rotation / 90 })
       }
     }
     const blend: Blend = o.mode === 'stack' ? 'screen' : 'normal'

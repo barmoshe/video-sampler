@@ -2,7 +2,7 @@ import { app } from '../engine/app'
 import { clipRoot, homeKey, homeSpeed, sliceTimes, type ClipParams, type Tune } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import type { Clip } from '../engine/types'
-import { noteName } from '../engine/voice-math'
+import { noteName, type FilterSpec, type FilterType, type LfoShape, type LfoSpec } from '../engine/voice-math'
 import { Check, Section, Seg, Slider } from './controls'
 import { ms, pct, rgb } from './format'
 
@@ -13,7 +13,7 @@ export function ClipList({ selected, onPick }: { selected: string | null; onPick
     <div className="clips">
       {clips.map((c) => (
         <button type="button" key={c.id} className="cliprow" aria-pressed={c.id === selected} onClick={() => onPick(c.id)}>
-          <span className="swatch" style={{ background: rgb(c.poster) }} />
+          <img className="thumb" src={c.thumb} alt="" style={{ background: rgb(c.poster) }} />
           <span>{c.name}</span>
           <span className="muted">{c.duration.toFixed(1)} s</span>
         </button>
@@ -115,9 +115,11 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
             </div>
             <p className="muted" style={{ margin: '10px 0 0' }}>The picture fades with the sound: opacity follows the envelope in dB.</p>
           </Section>
+          <FilterSection filter={p.filter} onChange={(filter) => set({ filter })} />
+          <LfoSection lfo={p.lfo} onChange={(lfo) => set({ lfo })} />
           <Section title="Clip file">
             <div className="clipcard">
-              <span className="swatch" style={{ background: rgb(clip.poster) }} />
+              <img className="thumb big" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} />
               <span className="muted">{clip.width}×{clip.height}, {clip.fps.toFixed(0)} fps, {clip.loudness.toFixed(0)} LUFS</span>
               <button type="button" className="btn" onClick={() => app.removeClip(clip.id)}>Remove</button>
             </div>
@@ -125,6 +127,50 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
         </>
       )}
     </>
+  )
+}
+
+const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} kHz` : `${Math.round(v)} Hz`)
+const toLog = (hzv: number) => Math.round((Math.log(hzv / 20) / Math.log(1000)) * 1000)
+const fromLog = (x: number) => 20 * Math.pow(1000, x / 1000)
+
+/** Filter with its envelope; the tile shows it (blur, edges, glow, drive). */
+export function FilterSection({ filter: f, onChange }: { filter: FilterSpec; onChange: (f: FilterSpec) => void }) {
+  const set = (x: Partial<FilterSpec>) => onChange({ ...f, ...x })
+  const fe = f.env
+  const off = f.type === 'off'
+  return (
+    <Section title="Filter">
+      <Seg<FilterType> label="Type" value={f.type} options={[['off', 'Off'], ['lp', 'Low-pass'], ['hp', 'High-pass'], ['bp', 'Band'], ['notch', 'Notch']]} onChange={(type) => set({ type, cutoff: type === 'hp' && f.cutoff > 10000 ? 200 : type === 'lp' && f.cutoff > 16000 ? 2000 : f.cutoff })} />
+      <div className="grid2" style={{ marginTop: 10 }}>
+        <Slider label="Cutoff" value={toLog(f.cutoff)} min={0} max={1000} format={(v) => hz(fromLog(v))} onChange={(v) => set({ cutoff: fromLog(v) })} disabled={off} />
+        <Slider label="Resonance" value={f.res} min={0} max={1} step={0.01} format={pct} onChange={(res) => set({ res })} disabled={off} />
+        <Slider label="Drive" value={f.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} />
+        <Slider label="Key track" value={f.key} min={0} max={1} step={0.05} format={pct} onChange={(key) => set({ key })} disabled={off} />
+        <Slider label="Envelope" value={f.envAmt} min={-8} max={8} step={0.1} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} oct`} onChange={(envAmt) => set({ envAmt })} disabled={off} />
+        <Slider label="Env attack" value={fe.a} min={0.001} max={2} step={0.001} format={ms} onChange={(a) => set({ env: { ...fe, a } })} disabled={off || !f.envAmt} />
+        <Slider label="Env decay" value={fe.d} min={0.01} max={4} step={0.01} format={ms} onChange={(d) => set({ env: { ...fe, d } })} disabled={off || !f.envAmt} />
+        <Slider label="Env sustain" value={fe.s} min={0} max={1} step={0.01} format={pct} onChange={(sv) => set({ env: { ...fe, s: sv } })} disabled={off || !f.envAmt} />
+      </div>
+      <p className="muted" style={{ margin: '10px 0 0' }}>The picture follows: low-pass blurs the tile octave for octave, high-pass leaves its edges, resonance makes them glow, drive adds contrast.</p>
+    </Section>
+  )
+}
+
+/** One LFO to the filter, the volume and the pan; the tile follows it. */
+export function LfoSection({ lfo: l, onChange }: { lfo: LfoSpec; onChange: (l: LfoSpec) => void }) {
+  const set = (x: Partial<LfoSpec>) => onChange({ ...l, ...x })
+  return (
+    <Section title="LFO">
+      <Seg<LfoShape> label="Shape" value={l.shape} options={[['sine', 'Sine'], ['triangle', 'Tri'], ['saw', 'Saw'], ['square', 'Square'], ['random', 'Random']]} onChange={(shape) => set({ shape })} />
+      <div className="grid2" style={{ marginTop: 10 }}>
+        <Slider label="Rate" value={Math.round(Math.log2(l.rate / 0.05) * 100)} min={0} max={900} format={() => `${l.rate < 1 ? l.rate.toFixed(2) : l.rate.toFixed(1)} Hz`} onChange={(v) => set({ rate: 0.05 * Math.pow(2, v / 100) })} />
+        <div style={{ alignSelf: 'end' }}><Check label="Restart on each note" checked={l.retrig} onChange={(retrig) => set({ retrig })} /></div>
+        <Slider label="To filter" value={l.filter} min={0} max={4} step={0.05} format={(v) => `${v.toFixed(2)} oct`} onChange={(filter) => set({ filter })} />
+        <Slider label="To volume" value={l.volume} min={0} max={1} step={0.01} format={pct} onChange={(volume) => set({ volume })} />
+        <Slider label="To pan" value={l.pan} min={0} max={1} step={0.01} format={pct} onChange={(pan) => set({ pan })} />
+      </div>
+    </Section>
   )
 }
 

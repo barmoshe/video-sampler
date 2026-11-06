@@ -24,7 +24,7 @@ export function PadsPanel({ onCamera }: { onCamera: () => void }) {
     <>
       <Section title="Pads" action={<button type="button" className="btn" onClick={onCamera}>Camera</button>}>
         <fieldset className="banks"><legend className="sr">Bank</legend>
-          {Array.from({ length: 8 }, (_, b) => <button key={b} type="button" aria-pressed={pads.bank === b} onClick={() => app.setPads({ bank: b, selected: PAD_BASE + b * 16 })}>{noteName(PAD_BASE + b * 16)}</button>)}
+          {Array.from({ length: 8 }, (_, b) => <button key={b} type="button" aria-pressed={pads.bank === b} title={`Pads ${noteName(PAD_BASE + b * 16)} to ${noteName(PAD_BASE + b * 16 + 15)}`} onClick={() => app.setPads({ bank: b, selected: PAD_BASE + b * 16 })}>{'ABCDEFGH'[b]}</button>)}
         </fieldset>
         <div className="padgrid">
           {order.map((i) => {
@@ -43,7 +43,7 @@ export function PadsPanel({ onCamera }: { onCamera: () => void }) {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.files.length) void app.importFiles([...e.dataTransfer.files].slice(0, 1), { pad: note }) }}
               >
-                {clip && <span className="fill" style={{ background: rgb(clip.poster) }} />}
+                {clip && <span className="fill" style={{ background: `${rgb(clip.poster)} url(${clip.thumb}) center / cover` }} />}
                 <span>{PAD_LABEL[i]}</span>
                 <span>{clip ? clip.name.slice(0, 9) : noteName(note)}</span>
               </button>

@@ -109,6 +109,18 @@ export class FrameCache {
     return out
   }
 
+  /** One cached frame, RGBA rows as uploaded (top row first), for UI thumbnails. */
+  readLayer(arr: TexArray, layer: number): Uint8ClampedArray {
+    const gl = this.gl, fb = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fb)
+    gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, arr.tex, 0, Math.max(0, Math.min(arr.layers - 1, layer)))
+    const out = new Uint8ClampedArray(arr.w * arr.h * 4)
+    gl.readPixels(0, 0, arr.w, arr.h, gl.RGBA, gl.UNSIGNED_BYTE, out)
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
+    gl.deleteFramebuffer(fb)
+    return out
+  }
+
   free(id: string) {
     const c = this.clips.get(id)
     if (!c) return
@@ -124,8 +136,9 @@ layout(location=1) in vec4 rect;   // x, y, w, h in pixels, origin top-left
 layout(location=2) in vec4 voice;  // q (source frame), W (shutter in frames), alpha, rotation (0..3 quarter turns clockwise)
 layout(location=3) in vec4 crop;   // u0, v0, u1, v1, in display orientation
 layout(location=4) in vec4 style;  // corner radius px, border px, -, -
+layout(location=5) in vec4 fxIn;   // picture twins: blur (fraction of tile height), edge, glow, drive
 uniform vec2 stage;
-out vec2 uv; out vec2 lp; flat out vec3 s; flat out vec4 st;
+out vec2 uv; out vec2 lp; flat out vec3 s; flat out vec4 st; flat out vec4 fx;
 void main() {
   vec2 p = rect.xy + corner * rect.zw;
   lp = corner * rect.zw; st = vec4(rect.zw, style.xy);
@@ -133,13 +146,13 @@ void main() {
   vec2 d = mix(crop.xy, crop.zw, corner);           // display-space uv
   int r = int(voice.w + 0.5);                        // stored frame shown turned r quarter turns clockwise
   uv = r == 1 ? vec2(d.y, 1.0 - d.x) : r == 2 ? vec2(1.0 - d.x, 1.0 - d.y) : r == 3 ? vec2(1.0 - d.y, d.x) : d;
-  s = voice.xyz;
+  s = voice.xyz; fx = fxIn;
 }`
 
 const FS = `#version 300 es
 precision highp float; precision highp sampler2DArray;
 uniform sampler2DArray frames; uniform float count; uniform int maxTaps; uniform vec3 border;
-in vec2 uv; in vec2 lp; flat in vec3 s; flat in vec4 st; out vec4 o;
+in vec2 uv; in vec2 lp; flat in vec3 s; flat in vec4 st; flat in vec4 fx; out vec4 o;
 float wrapLayer(float l) { return clamp(mod(l, count), 0.0, count - 1.0); }
 float sdRound(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 void main() {
@@ -157,6 +170,34 @@ void main() {
     }
     c /= float(K);
   }
+  // picture twins of the sound (design §5): blur, edges, glow, drive. Taps read the frame at q.
+  if (fx.x > 0.0004 || fx.y > 0.001 || fx.z > 0.001) {
+    float l = wrapLayer(floor(q + 0.5));
+    vec2 ts = vec2(textureSize(frames, 0).xy);
+    if (fx.x > 0.0004) {           // a 16-tap golden-angle disc: a soft lens blur
+      vec2 rv = vec2(fx.x * ts.y / ts.x, fx.x);
+      vec3 acc = c;
+      for (int k = 1; k < 17; k++) {
+        float r = sqrt(float(k) / 16.0), a = float(k) * 2.39996;
+        acc += texture(frames, vec3(uv + rv * r * vec2(cos(a), sin(a)), l)).rgb;
+      }
+      c = acc / 17.0;
+    }
+    if (fx.y > 0.001 || fx.z > 0.001) { // edges by a Laplacian, 1.5 texels out
+      vec2 e = 1.5 / ts;
+      vec3 n = texture(frames, vec3(uv + vec2(0.0, e.y), l)).rgb, so = texture(frames, vec3(uv - vec2(0.0, e.y), l)).rgb;
+      vec3 ea = texture(frames, vec3(uv + vec2(e.x, 0.0), l)).rgb, we = texture(frames, vec3(uv - vec2(e.x, 0.0), l)).rgb;
+      vec3 lap = abs(4.0 * c - n - so - ea - we);
+      c = mix(c, min(vec3(1.0), lap * 2.5 + c * 0.12), fx.y);
+      c += fx.z * lap * 1.5;
+    }
+  }
+  if (fx.w > 0.001) {              // drive: contrast and saturation
+    float d = fx.w;
+    c = clamp((c - 0.5) * (1.0 + 0.9 * d) + 0.5, 0.0, 1.0);
+    float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = clamp(mix(vec3(y), c, 1.0 + 0.9 * d), 0.0, 1.0);
+  }
   // the tile's frame (production.md §3 A): rounded corners, an optional border, antialiased
   vec2 hs = st.xy * 0.5;
   float d = sdRound(lp - hs, hs, min(st.z, min(hs.x, hs.y)));
@@ -173,10 +214,11 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string) {
   return sh
 }
 
-export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number]; rot?: number; radius?: number; border?: number }
+export interface Tile { x: number; y: number; w: number; h: number; q: number; W: number; alpha: number; crop: [number, number, number, number]; rot?: number; radius?: number; border?: number; fx?: [number, number, number, number] }
 export type Blend = 'normal' | 'screen' | 'add'
 
-const STRIDE = 16
+const STRIDE = 20
+const NO_FX: [number, number, number, number] = [0, 0, 0, 0]
 
 export class Collage {
   private p: WebGLProgram
@@ -209,7 +251,7 @@ export class Collage {
     this.ib = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ib)
     gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW)
-    for (const [loc, off] of [[1, 0], [2, 16], [3, 32], [4, 48]] as const) {
+    for (const [loc, off] of [[1, 0], [2, 16], [3, 32], [4, 48], [5, 64]] as const) {
       gl.enableVertexAttribArray(loc)
       gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, STRIDE * 4, off)
       gl.vertexAttribDivisor(loc, 1)
@@ -229,7 +271,7 @@ export class Collage {
     if (!n) return
     for (let i = 0; i < n; i++) {
       const t = tiles[i], o = i * STRIDE
-      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, t.rot ?? 0, ...t.crop, t.radius ?? 0, t.border ?? 0, 0, 0], o)
+      this.inst.set([t.x, t.y, t.w, t.h, t.q, t.W, t.alpha, t.rot ?? 0, ...t.crop, t.radius ?? 0, t.border ?? 0, 0, 0, ...(t.fx ?? NO_FX)], o)
     }
     gl.viewport(0, 0, width, height)
     gl.enable(gl.BLEND)

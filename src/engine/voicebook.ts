@@ -1,7 +1,7 @@
 // The main thread's record of every voice. The picture is a pure function of this book and the
 // time, so live play, take playback and the offline export all draw the same thing (design §2).
 import type { NoteSpec, Voice } from './types'
-import { envelope, releaseTail, type Region } from './voice-math'
+import { cutoffAt, envelope, releaseTail, tremolo, type Region } from './voice-math'
 
 export class VoiceBook {
   voices: Voice[] = []
@@ -70,7 +70,13 @@ export function positionAt(v: Voice, t: number, clipDuration: number): number | 
 export function gainAt(v: Voice, t: number): number {
   let m = 1
   for (const [tg, g] of v.gains) { if (tg <= t) m = g; else break }
-  return v.gain * m * envelope(t - v.on, v.off - v.on, v.env)
+  return v.gain * m * envelope(t - v.on, v.off - v.on, v.env) * tremolo(v.lfo, t - v.on, v.on, v.id)
+}
+
+/** The voice's filter cutoff at t (Hz), or null without a filter. */
+export function filterAt(v: Voice, t: number): number | null {
+  if (!v.filter || v.filter.type === 'off') return null
+  return cutoffAt(v.filter, v.lfo, t - v.on, v.off - v.on, v.on, v.note, v.id)
 }
 
 export function rateAt(v: Voice, t: number): number {

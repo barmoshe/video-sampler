@@ -3,7 +3,7 @@
 // crossfade, ADSR and constant-power pan. The main thread owns allocation and stealing (it sends
 // ids); this processor only renders. Spike: 128 voices cost 17.6 % of the audio thread, and
 // aliasing at +36 st is 46 dB under Chrome's own buffer source.
-import { crossfade, pyramidLevel } from '../voice-math'
+import { crossfade, cutoffAt, panLfo, pyramidLevel, svfCoefs, tremolo, type FilterSpec, type LfoSpec } from '../voice-math'
 
 declare const sampleRate: number
 declare const currentFrame: number
@@ -19,6 +19,7 @@ export interface OnEvent {
   kind: 'on'; frame: number; id: number; clip: string
   rate: number; start: number; end: number; loop: boolean; loopStart: number; loopEnd: number; xfade: number
   gain: number; pan: number; env: { a: number; d: number; s: number; r: number }
+  note: number; filter?: FilterSpec; lfo?: LfoSpec
 }
 export interface OffEvent { kind: 'off'; frame: number; id: number; fastMs?: number }
 /** A new gain multiplier, ramped over 30 ms (layer zones, macros: the chain-selector morph). */
@@ -32,7 +33,14 @@ interface Voice {
   pos: number; step: number; end: number; loop: boolean; ls: number; le: number; xf: number
   gain: number; gainTarget: number; gainStep: number; gL: number; gR: number
   env: number; stage: number; aInc: number; dMul: number; sus: number; rMul: number
+  note: number; on: number; off: number; pan: number
+  filter: FilterSpec | null; lfo: LfoSpec | null
+  mode: number; a1: number; a2: number; a3: number; k: number; dk: number; dn: number
+  s1L: number; s2L: number; s1R: number; s2R: number; trem: number
 }
+
+const MODES: Record<string, number> = { lp: 1, hp: 2, bp: 3, notch: 4 }
+const CTRL = 32 // control rate for the filter, tremolo and pan: every 32 samples
 
 const LN1000 = Math.log(1000)
 
@@ -76,11 +84,31 @@ class VoiceEngine extends AudioWorkletProcessor {
       env: 0, stage: 0, aInc: 1 / (Math.max(0.0015, ev.env.a) * sampleRate),
       dMul: Math.exp(-LN1000 / (Math.max(1e-4, ev.env.d) * sampleRate)), sus: ev.env.s,
       rMul: Math.exp(-LN1000 / (Math.max(0.03, ev.env.r) * sampleRate)),
+      note: ev.note, on: ev.frame / sampleRate, off: Infinity, pan: ev.pan,
+      filter: ev.filter && (ev.filter.type !== 'off' || ev.filter.drive > 0) ? ev.filter : null,
+      lfo: ev.lfo && (ev.lfo.filter || ev.lfo.volume || ev.lfo.pan) ? ev.lfo : null,
+      mode: ev.filter ? MODES[ev.filter.type] ?? 0 : 0, a1: 0, a2: 0, a3: 0, k: 2,
+      dk: 1 + 15 * (ev.filter?.drive ?? 0) ** 2, dn: 1 / Math.tanh(1 + 15 * (ev.filter?.drive ?? 0) ** 2),
+      s1L: 0, s2L: 0, s1R: 0, s2R: 0, trem: 1,
     })
+  }
+
+  /** Filter coefficients, tremolo and pan for the moment t (audio-clock seconds). */
+  control(v: Voice, t: number) {
+    const since = t - v.on, off = v.off - v.on
+    if (v.filter && v.mode) [v.a1, v.a2, v.a3, v.k] = svfCoefs(cutoffAt(v.filter, v.lfo ?? undefined, since, off, v.on, v.note, v.id), v.filter.res, sampleRate)
+    if (v.lfo) {
+      v.trem = tremolo(v.lfo, since, v.on, v.id)
+      if (v.lfo.pan) {
+        const th = ((Math.max(-1, Math.min(1, v.pan + panLfo(v.lfo, since, v.on, v.id))) + 1) * Math.PI) / 4
+        v.gL = Math.cos(th); v.gR = Math.sin(th)
+      }
+    }
   }
 
   release(v: Voice, fastMs?: number) {
     if (v.stage === 3 && !fastMs) return
+    if (v.stage !== 3) v.off = currentFrame / sampleRate
     v.stage = 3
     if (fastMs) v.rMul = Math.exp(-LN1000 / ((fastMs / 1000) * sampleRate))
   }
@@ -108,7 +136,9 @@ class VoiceEngine extends AudioWorkletProcessor {
       const span = v.le - v.ls
       let pos = v.pos, env = v.env, stage = v.stage
       let dead = false
+      const shaped = v.filter !== null || v.lfo !== null
       for (let i = 0; i < n; i++) {
+        if (shaped && (i & (CTRL - 1)) === 0) this.control(v, (f0 + i) / sampleRate)
         if (pos >= limit) {
           if (v.loop && span > 2) { pos = v.ls + (pos - limit); if (pos >= limit) pos = v.ls }
           else { dead = true; break }
@@ -127,7 +157,21 @@ class VoiceEngine extends AudioWorkletProcessor {
           v.gain += v.gainStep
           if ((v.gainStep > 0 && v.gain >= v.gainTarget) || (v.gainStep < 0 && v.gain <= v.gainTarget)) { v.gain = v.gainTarget; v.gainStep = 0 }
         }
-        const g = env * v.gain
+        if (v.filter) { // drive, then the state-variable filter (math A6), per channel
+          if (v.dk > 1.001) { xl = Math.tanh(xl * v.dk) * v.dn; xr = Math.tanh(xr * v.dk) * v.dn }
+        }
+        if (v.mode) {
+          let v3 = xl - v.s2L, v1 = v.a1 * v.s1L + v.a2 * v3, v2 = v.s2L + v.a2 * v.s1L + v.a3 * v3
+          v.s1L = 2 * v1 - v.s1L; v.s2L = 2 * v2 - v.s2L
+          xl = v.mode === 1 ? v2 : v.mode === 2 ? xl - v.k * v1 - v2 : v.mode === 3 ? v1 : xl - v.k * v1
+          if (dr === dl) xr = xl
+          else {
+            v3 = xr - v.s2R; v1 = v.a1 * v.s1R + v.a2 * v3; v2 = v.s2R + v.a2 * v.s1R + v.a3 * v3
+            v.s1R = 2 * v1 - v.s1R; v.s2R = 2 * v2 - v.s2R
+            xr = v.mode === 1 ? v2 : v.mode === 2 ? xr - v.k * v1 - v2 : v.mode === 3 ? v1 : xr - v.k * v1
+          }
+        }
+        const g = env * v.gain * v.trem
         L[i] += xl * g * v.gL
         R[i] += xr * g * v.gR
         pos += v.step

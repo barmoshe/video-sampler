@@ -78,7 +78,7 @@ input[type='range'] { width: 100%; accent-color: var(--ink); height: 18px; margi
 .swatch { width: 44px; height: 28px; border: 1px solid var(--rule); }
 .muted { color: var(--ink-3); font-size: 12px; }
 .clips { display: grid; gap: 6px; }
-.cliprow { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--rule); cursor: pointer; background: none; text-align: left; font-size: 12px; }
+.cliprow { display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--rule); cursor: pointer; background: none; text-align: left; font-size: 12px; }
 .cliprow[aria-pressed='true'] { border-color: var(--blue); }
 .cliprow .swatch { width: 16px; height: 16px; }
 .region { position: relative; height: 34px; border: 1px solid var(--rule); background: var(--raise); margin-top: 6px; }
@@ -87,7 +87,9 @@ input[type='range'] { width: 100%; accent-color: var(--ink); height: 18px; margi
 /* pads */
 .padgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .pad { aspect-ratio: 1; border: 1px solid var(--rule); background: var(--raise); position: relative; cursor: pointer; padding: 0; font: 600 11px var(--mono); color: var(--ink-2); display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 5px; overflow: hidden; }
-.pad .fill { position: absolute; inset: 0; opacity: 0.55; }
+.pad .fill { position: absolute; inset: 0; opacity: 0.8; }
+.pad .fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0) 40%, rgba(0,0,0,0) 60%, rgba(0,0,0,.6)); }
+.pad span:not(.fill) { color: #f2efe6; text-shadow: 0 1px 2px #000; }
 .pad span { position: relative; }
 .pad[aria-pressed='true'] { border-color: var(--blue); }
 .pad.on { border-color: var(--orange); }
@@ -144,3 +146,8 @@ button.key { padding: 0 0 6px; }
 .scalebar .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .key.out { opacity: 0.35; }
 .key.tonic.w { background: #fbeee2; }
+
+/* clip pictures */
+.thumb { width: 40px; height: 24px; object-fit: cover; display: block; border: 1px solid var(--rule); flex: none; }
+.thumb.big { width: 96px; height: 54px; }
+.cliprow .thumb { width: 40px; height: 24px; }

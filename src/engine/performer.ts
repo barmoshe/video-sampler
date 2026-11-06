@@ -116,6 +116,7 @@ export class Performer {
         kind: 'on', frame, id: v.id, clip: sp.reverse ? `${sp.clipId}:rev` : sp.clipId, rate: r,
         start: sp.region.start, end: sp.region.end, loop: sp.region.loop, loopStart: sp.region.loopStart, loopEnd: sp.region.loopEnd,
         xfade: sp.xfade, gain: sp.gain * v.gains[0][1], pan: sp.pan, env: sp.env,
+        note, filter: sp.filter, lfo: sp.lfo,
       })
     }
     this.held.set(note, [...(this.held.get(note) ?? []), ...ids])

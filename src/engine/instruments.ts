@@ -1,7 +1,7 @@
 // The three instruments (design §7): each turns one note into the voices it should play.
 // Clip (Simpler-like), Pads (Drum Rack-like), Layers (Instrument Rack-like, equal to Pads: ADR 0767).
 import type { Clip, NoteSpec } from './types'
-import { DEFAULT_ENV, rate, velocityGain, type Env, type Region } from './voice-math'
+import { DEFAULT_ENV, DEFAULT_FILTER, DEFAULT_LFO, rate, velocityGain, type Env, type FilterSpec, type LfoSpec, type Region } from './voice-math'
 
 export const dB = (x: number) => Math.pow(10, x / 20)
 
@@ -25,13 +25,24 @@ export interface ClipParams {
   sliceBy: SliceBy
   sliceRegions: number
   slicePlayback: 'mono' | 'poly' | 'thru'
+  filter: FilterSpec
+  lfo: LfoSpec
 }
 export const defaultClipParams = (): ClipParams => ({
   clipId: null, mode: 'classic', tune: 'nearest', root: 60, transpose: 0, detune: 0,
   start: 0, end: 1, loop: true, loopStart: 0, loopEnd: 1, xfade: 0.03, voices: 128, retrig: true,
   env: { ...DEFAULT_ENV }, velRange: 40, reverse: false, oneShotPoly: false,
   sliceBy: 'transient', sliceRegions: 16, slicePlayback: 'mono',
+  filter: { ...DEFAULT_FILTER, env: { ...DEFAULT_FILTER.env } }, lfo: { ...DEFAULT_LFO },
 })
+
+/** The filter and LFO a voice carries, or nothing when they would do nothing. */
+export function shaping(f: FilterSpec, l: LfoSpec): { filter?: FilterSpec; lfo?: LfoSpec } {
+  return {
+    filter: f.type !== 'off' || f.drive > 0 ? f : undefined,
+    lfo: l.filter || l.volume || l.pan ? l : undefined,
+  }
+}
 
 export const SLICE_BASE = 36 // C1
 
@@ -88,7 +99,7 @@ function reverseRegion(r: Region, d: number): Region {
 export function clipNote(p: ClipParams, clip: Clip, note: number, vel: number): NoteSpec[] {
   const d = clip.duration
   const s = p.start * d, e = Math.max(p.end * d, s + 0.01)
-  const base = { clipId: clip.id, chain: 'clip', cell: `n:${note}`, xfade: p.xfade, gain: velocityGain(vel, p.velRange), pan: 0, env: p.env, choke: 0 }
+  const base = { clipId: clip.id, chain: 'clip', cell: `n:${note}`, xfade: p.xfade, gain: velocityGain(vel, p.velRange), pan: 0, env: p.env, choke: 0, ...shaping(p.filter, p.lfo) }
   let region: Region, r: number, gate = true, mono: string | null = null
   if (p.mode === 'slice') {
     const sl = sliceTimes(p, clip), i = note - SLICE_BASE

@@ -85,3 +85,88 @@ export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A',
 export function noteName(n: number): string {
   return `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 2}`
 }
+
+// ---------- filter, filter envelope, LFO (production.md §3 D, §5.2) -------------------------------
+// One definition for the worklet (sound) and the stage (the picture twin), so a closing low-pass
+// blurs the tile in step with the sound, live and in the export.
+
+export type FilterType = 'off' | 'lp' | 'hp' | 'bp' | 'notch'
+export interface FilterSpec {
+  type: FilterType
+  cutoff: number // Hz
+  res: number // 0..1 (Q 0.5 .. 20)
+  drive: number // 0..1, saturation before the filter
+  envAmt: number // octaves the filter envelope adds at its peak (−8..8)
+  env: Env
+  key: number // key tracking, 0..1 (1 = the cutoff follows the note)
+}
+export const DEFAULT_FILTER: FilterSpec = { type: 'off', cutoff: 20000, res: 0.15, drive: 0, envAmt: 0, env: { a: 0.005, d: 0.5, s: 0, r: 0.4 }, key: 0 }
+
+export type LfoShape = 'sine' | 'triangle' | 'saw' | 'square' | 'random'
+export interface LfoSpec {
+  shape: LfoShape
+  rate: number // Hz
+  filter: number // octaves of cutoff swing
+  volume: number // 0..1 tremolo depth
+  pan: number // 0..1 auto-pan depth
+  retrig: boolean // phase starts at each note (else it runs on the audio clock)
+}
+export const DEFAULT_LFO: LfoSpec = { shape: 'sine', rate: 4, filter: 0, volume: 0, pan: 0, retrig: true }
+
+function hash01(n: number): number {
+  let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b)
+  x ^= x >>> 13
+  x = Math.imul(x, 0xc2b2ae35)
+  x ^= x >>> 16
+  return (x >>> 0) / 4294967296
+}
+
+/** LFO value in −1..1. `since` = seconds after note-on, `on` = note-on time on the audio clock. */
+export function lfoValue(l: LfoSpec, since: number, on: number, seed: number): number {
+  const ph = l.rate * Math.max(0, l.retrig ? since : on + since), f = ph - Math.floor(ph)
+  switch (l.shape) {
+    case 'sine': return Math.sin(2 * Math.PI * f)
+    case 'triangle': return 1 - 4 * Math.abs(f - 0.5)
+    case 'saw': return 1 - 2 * f
+    case 'square': return f < 0.5 ? 1 : -1
+    default: return hash01(Math.floor(ph) * 7919 + seed) * 2 - 1
+  }
+}
+
+/** Cutoff in Hz `since` seconds after note-on, released at `off` (seconds after on, Infinity while held). */
+export function cutoffAt(f: FilterSpec, l: LfoSpec | undefined, since: number, off: number, on: number, note: number, seed: number): number {
+  const e = f.envAmt ? f.envAmt * envelope(since, off, f.env) : 0
+  const m = l && l.filter ? l.filter * lfoValue(l, since, on, seed) : 0
+  return Math.max(20, Math.min(20000, f.cutoff * Math.pow(2, e + m + (f.key * (note - 60)) / 12)))
+}
+
+/** Tremolo gain multiplier (1 = none). */
+export function tremolo(l: LfoSpec | undefined, since: number, on: number, seed: number): number {
+  return l && l.volume ? 1 - (l.volume * (1 - lfoValue(l, since, on, seed))) / 2 : 1
+}
+
+/** Auto-pan offset in −1..1. */
+export function panLfo(l: LfoSpec | undefined, since: number, on: number, seed: number): number {
+  return l && l.pan ? l.pan * lfoValue(l, since, on, seed) : 0
+}
+
+/** Trapezoidal SVF coefficients (Cytomic / Simper, math A6): [a1, a2, a3, k]. */
+export function svfCoefs(fc: number, res: number, fs: number): [number, number, number, number] {
+  const g = Math.tan((Math.PI * Math.min(fc, fs * 0.45)) / fs), k = 2 - 1.95 * Math.max(0, Math.min(1, res))
+  const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2
+  return [a1, a2, a3, k]
+}
+
+/**
+ * The picture twin of the filter (design §5, math §7), as [blur, edge, glow, drive]:
+ * low-pass → blur, octave for octave (1 kHz ≈ 0.56 % of the tile, 100 Hz ≈ 5.6 %); high-pass →
+ * edges; resonance → edge glow; drive → contrast and saturation.
+ */
+export function filterTwin(f: FilterSpec, cutoff: number): [number, number, number, number] {
+  if (f.type === 'off') return [0, 0, 0, f.drive]
+  const lpBlur = Math.min(0.09, 0.0056 * (1000 / cutoff))
+  const blur = f.type === 'lp' ? (cutoff > 16000 ? 0 : lpBlur) : f.type === 'bp' ? lpBlur * 0.5 : 0
+  const edge = f.type === 'hp' ? Math.min(1, Math.log2(cutoff / 20) / 9) : f.type === 'bp' ? Math.min(0.7, Math.log2(cutoff / 20) / 12) : 0
+  const glow = f.type === 'notch' ? 0 : f.res * f.res * 0.8
+  return [blur, edge, glow, f.drive]
+}

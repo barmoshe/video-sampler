@@ -113,11 +113,12 @@ export async function importClip(file: Blob, name: string, ctx: BaseAudioContext
     diff[l] = s / (T * 0.75 * 255)
   }
   const poster = dominant(thumbs.subarray(cf.poster * T, (cf.poster + 1) * T))
+  const thumb = await posterImage(cache.readLayer(cf.S, cf.poster), cf.S.w, cf.S.h, cf.rotation)
   onProgress?.(0.97, 'Tuning')
   const { fwd, rev, analysis } = await analysed
   const clip: Clip = {
     id, name, duration, fs: audio.fs, channels: fwd[0], fps, frames, width, height, aspect,
-    root: analysis.root, rootFound: analysis.rootFound, poster, onsets: analysis.onsets, cuts: cuts(diff, fps), loudness: analysis.loudness,
+    root: analysis.root, rootFound: analysis.rootFound, poster, thumb, onsets: analysis.onsets, cuts: cuts(diff, fps), loudness: analysis.loudness,
   }
   onProgress?.(1, 'Ready')
   return { clip, fwd, rev }
@@ -144,4 +145,16 @@ function dominant(px: Uint8Array): [number, number, number] {
     r += R * s; g += G * s; b += B * s; w += s
   }
   return [r / w, g / w, b / w]
+}
+
+/** The poster frame as a small JPEG, turned upright (frames are cached as stored). */
+async function posterImage(px: Uint8ClampedArray, w: number, h: number, rotation: 0 | 90 | 180 | 270): Promise<string> {
+  const src = new OffscreenCanvas(w, h)
+  src.getContext('2d')!.putImageData(new ImageData(px as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0)
+  const side = rotation % 180 !== 0
+  const out = new OffscreenCanvas(side ? h : w, side ? w : h), g = out.getContext('2d')!
+  g.translate(out.width / 2, out.height / 2)
+  g.rotate((rotation * Math.PI) / 180)
+  g.drawImage(src, -w / 2, -h / 2)
+  return URL.createObjectURL(await out.convertToBlob({ type: 'image/jpeg', quality: 0.82 }))
 }
