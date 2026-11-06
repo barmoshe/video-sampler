@@ -1,0 +1,32 @@
+{
+  "about": "The first bundled pack (ADR 0770 in bar_builds): CC0 recordings from VCSL (github.com/sgossner/VCSL, CC0-1.0). Each entry picks one file by a regular expression over the repo's paths; source-audio.mjs downloads, trims and levels it. Artwork: a 3D render per sound (spec in tools/library/ART.md).",
+  "source": { "repo": "sgossner/VCSL", "branch": "master", "license": "CC0-1.0", "url": "https://github.com/sgossner/VCSL" },
+  "sounds": [
+    { "id": "marimba", "name": "Marimba", "kind": "pitched", "match": "Marimba/Marimba_hit_Outrigger_C4_med_01\\.wav$", "max": 2.5, "object": "a rosewood marimba bar on its frame, struck by a yarn mallet" },
+    { "id": "kalimba", "name": "Kalimba", "kind": "pitched", "match": "Kalimba, Tanzania/MBira3_pluck_Main_C#4_", "max": 2.5, "object": "a kalimba box with steel tines, one tine plucked by a thumb shape" },
+    { "id": "vibraphone", "name": "Vibraphone", "kind": "pitched", "match": "Vibraphone/Hard Mallets/Vibes_hard_(D4|B3)_v3_rr1_Main\\.wav$", "max": 3, "object": "an aluminium vibraphone bar with its resonator tube, a hard mallet" },
+    { "id": "xylophone", "name": "Xylophone", "kind": "pitched", "match": "Xylophone/.*Xylo_Hard_C4_ff_01_far\\.wav$", "max": 1.5, "object": "a short bright xylophone bar, a hard mallet" },
+    { "id": "piano", "name": "Grand piano", "kind": "pitched", "match": "Steinway B/NoSus/JHPiano_NoSus_Close_C4_vl3_rr1\\.wav$", "max": 3, "object": "one piano key going down and its felt hammer striking a string" },
+    { "id": "harp", "name": "Folk harp", "kind": "pitched", "match": "Folk Harp/EWHarp_Normal_C4_v3_RR1\\.wav$", "max": 3, "object": "a harp string plucked and vibrating in its frame" },
+    { "id": "chimes", "name": "Hand chime", "kind": "pitched", "match": "Hand Chimes/sus_C4_r01_main\\.wav$", "max": 3, "object": "a brass hand chime swung, its clapper striking" },
+    { "id": "balafon", "name": "Balafon", "kind": "pitched", "match": "Balafon/.*EthnicXylo_hardM_C4_vl2_rr1_Mid\\.wav$", "max": 2, "object": "a wooden balafon key over a gourd resonator" },
+    { "id": "ocarina", "name": "Ocarina", "kind": "pitched", "match": "Ocarina, Typical/Sustains/SusVib/StdOcarina_SusVib_C4\\.wav$", "max": 2.5, "object": "a ceramic ocarina with air flowing out of the window" },
+    { "id": "glockenspiel", "name": "Tubular glockenspiel", "kind": "pitched", "match": "Tubular Glockenspiel/C1_medium1\\.wav$", "max": 3, "object": "a hanging metal tube struck at the top" },
+    { "id": "strumstick", "name": "Strumstick", "kind": "pitched", "match": "Strumstick/Finger/.*_(C3|D3)_vl2_rr1", "max": 2.5, "object": "a strumstick string plucked over its fretboard" },
+    { "id": "kick", "name": "Bass drum", "kind": "drum", "match": "Bass Drum 2/bassdrum_hit_f\\.wav$", "max": 1.5, "object": "a bass drum head pushed by a beater" },
+    { "id": "snare", "name": "Snare", "kind": "drum", "match": "Snare Drum, Modern 1/Snare2_HitNS_v5_rr1_Mid\\.wav$", "max": 0.9, "object": "a snare drum, a stick hits the head, the wires rattle" },
+    { "id": "hihat", "name": "Hi-hat", "kind": "drum", "match": "Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid\\.wav$", "max": 0.6, "object": "two closed hi-hat cymbals, a stick tip hits the top one" },
+    { "id": "clap", "name": "Clap", "kind": "drum", "match": "Claps/Clap_rr1\\.wav$", "max": 0.7, "object": "two hand shapes meeting" },
+    { "id": "shaker", "name": "Shaker", "kind": "drum", "match": "Shaker, Small/Mid_ShakerDouble_Down_rr1\\.wav$", "max": 0.7, "object": "a small egg shaker jolting, beads inside" },
+    { "id": "tambourine", "name": "Tambourine", "kind": "drum", "match": "Tambourine 1/Tamb1_Hit_v2_rr1_Mid\\.wav$", "max": 1.2, "object": "a tambourine hit, its jingles flying" },
+    { "id": "cajon", "name": "Cajon", "kind": "drum", "match": "Cajon/Cajon_hit1_f_rr1\\.wav$", "max": 1, "object": "a cajon box, its front plate flexing under a hand" },
+    { "id": "conga", "name": "Conga", "kind": "drum", "match": "Conga/Conga_HitN_v2_rr1_Sum\\.wav$|Conga/Conga_HitN_v1_rr1_Sum\\.wav$", "max": 1.2, "object": "a conga head rippling under a hand" },
+    { "id": "bongo", "name": "Bongo", "kind": "drum", "match": "Bongos/BongoH_Hit1_v3_rr1_Mid\\.wav$", "max": 0.9, "object": "a small bongo head struck by fingers" },
+    { "id": "tom", "name": "Tom", "kind": "drum", "match": "Tom 1/.*TomH_HitM_v3_rr1_Mid\\.wav$", "max": 1.5, "object": "a rack tom struck by a stick" },
+    { "id": "cymbal", "name": "Cymbal", "kind": "drum", "match": "Suspended Cymbal 1/susCymb1_hit_f1\\.wav$", "max": 3, "object": "a suspended cymbal wobbling after a hit" },
+    { "id": "cowbell", "name": "Cowbell", "kind": "drum", "match": "Cowbells/Cowbell1_Hit_v3_rr1_Mid\\.wav$", "max": 0.8, "object": "a cowbell struck by a stick" },
+    { "id": "claves", "name": "Claves", "kind": "drum", "match": "Claves/Claves1_Hit_v2_rr1_Mid\\.wav$", "max": 0.5, "object": "two wooden claves clicking" },
+    { "id": "woodblock", "name": "Woodblock", "kind": "drum", "match": "Woodblock/wood_click_f_rr1\\.wav$", "max": 0.5, "object": "a slotted woodblock struck" },
+    { "id": "framedrum", "name": "Frame drum", "kind": "drum", "match": "Frame Drum/HDrumL_Hand_rr1_Sum\\.wav$", "max": 1.5, "object": "a wide frame drum struck by a palm" }
+  ]
+}
