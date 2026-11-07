@@ -274,6 +274,26 @@ try {
     if (both !== 2 || afterChoke !== 2) throw new Error(`voices ${both} then ${afterChoke} after the choke`)
     return `Z+C ${both} tiles; X choked Z: ${afterChoke}`
   })
+  await step('pads: swap, layer, 16 Levels, note repeat', async () => {
+    await evaluate("window.__vs.setKind('pads')")
+    const pair = () => S('s.pads.chains.filter((c) => c.note === 36 || c.note === 37).map((c) => c.note + ":" + c.clipId).sort().join(" ")')
+    const before = await pair()
+    await evaluate('window.__vs.swapPads(36, 37)')
+    const swapped = await pair()
+    await evaluate('window.__vs.layerPad(38, 36)')
+    const layered = await S('s.pads.chains.filter((c) => c.note === 36).length')
+    await evaluate("window.__vs.setPads({ selected: 37 }); window.__vs.setPadPlay({ levels: true })")
+    await key('Digit4', 'keyDown'); await sleep(200) // the top-right pad of the block: the loudest level
+    const vel = await evaluate('window.__vs.performer.book.voices.filter((v) => v.note === 37 && v.off === Infinity).map((v) => v.vel).join(",")')
+    await key('Digit4', 'keyUp')
+    await evaluate("window.__vs.setPadPlay({ levels: false, repeat: true, rate: 0.25, swing: 0 }); window.__vs.setTransport({ bpm: 120 })")
+    const t0 = await evaluate('window.__vs.ctx.currentTime')
+    await key('KeyX', 'keyDown'); await sleep(1050); await key('KeyX', 'keyUp') // pad 37 at 1/16 and 120 BPM: a hit every 0.125 s
+    const hits = await evaluate(`new Set(window.__vs.performer.book.voices.filter((v) => v.note === 37 && v.on >= ${t0}).map((v) => v.on.toFixed(3))).size`)
+    await evaluate("window.__vs.setPadPlay({ repeat: false })")
+    if (before === swapped || layered !== 2 || vel !== '127' || hits < 6) throw new Error(`swap ${before} → ${swapped}; layered ${layered}; level vel ${vel}; repeat hits ${hits}`)
+    return `swapped (${swapped}); pad 36 layered ×${layered}; 16 Levels top-right = vel ${vel}; ${hits} repeat hits in about a second`
+  })
   await step('layers: two layers, the selector morphs held notes', async () => {
     await evaluate("window.__vs.setKind('layers')")
     const ids = await S('s.clips.map((c) => c.id)')
@@ -344,7 +364,8 @@ try {
   await step('sample editor: drag the start handle, double-click a manual slice', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id, mode: 'classic', start: 0, end: 1, slices: [] })")
     await sleep(300)
-    const r = await evaluate("(() => { const c = document.querySelector('.sampler-ed canvas'); c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })()")
+    const measure = () => evaluate("(() => { const c = document.querySelector('.sampler-ed canvas'); c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })()")
+    let r = await measure()
     await sleep(200)
     const mouse = (type, x, clickCount = 1) => page('Input.dispatchMouseEvent', { type, x, y: r.y + r.h / 2, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount })
     const under = await evaluate(`(() => { const e = document.elementFromPoint(${r.x + 2}, ${r.y + r.h / 2}); window.__ev = { down: 0, move: 0, up: 0 }; const c = document.querySelector('.sampler-ed canvas'); for (const k of ['down', 'move', 'up']) c.addEventListener('pointer' + k, () => window.__ev[k]++); return e ? e.tagName + '.' + e.className : 'nothing' })()`)
@@ -354,6 +375,8 @@ try {
     const start = await S('s.clip.start')
     await evaluate("window.__vs.setClip({ mode: 'slice', sliceBy: 'manual', start: 0 })")
     await sleep(300)
+    r = await measure() // Slice mode hides the Tune section, so the editor has moved up the panel
+    await sleep(200)
     await mouse('mousePressed', r.x + r.w * 0.5, 1); await mouse('mouseReleased', r.x + r.w * 0.5, 1)
     await mouse('mousePressed', r.x + r.w * 0.5, 2); await mouse('mouseReleased', r.x + r.w * 0.5, 2)
     await sleep(200)
