@@ -1,12 +1,13 @@
-# Pack art (3D clips): handoff, 2026-11-07 03:35
+# Pack art (3D clips): handoff, 2026-11-07 06:10 (done: 26 clips in public/library, `1ef4e48`)
 
 Session: the Blender pack-art side session (no web, no downloads: bpy safety rule, knowledge/33 §33.9).
 
 ## State
 
 - `scene.py` builds all 26 instruments (`build_<id>`), one shared studio set, EEVEE by default. Every one
-  smoke-rendered (frames 0 and 4) and was judged on contact sheets over two rounds; the full renders are in
-  progress in background batches into the session scratchpad (`.../scratchpad/full/<id>/frames`).
+  smoke-rendered (frames 0 and 4) and was judged on contact sheets over two rounds, then rendered whole and
+  packed: 26 MP4s + posters, `manifest.json`, `CREDITS.md` in `public/library/` (3.6 MB), `sheet.png` here.
+  The PNG frames were scratch and are gone; `render.sh` + `pack.py` rebuild them (about 2 h on this Mac).
 - `render.sh OUT id...` renders whole clips (frames only); `pack.py OUT` muxes them into `public/library/`
   (MP4 per ART.md, poster = loudest frame, `manifest.json` as `{items: [...]}` in the shape `src/engine/library.ts`
   reads, `CREDITS.md`) and writes `sheet.png` here. It keeps manifest entries that are not this pack's.
