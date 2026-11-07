@@ -28,9 +28,19 @@ Session: the Blender pack-art side session (no web, no downloads: bpy safety rul
 - Motion blur is off (EEVEE ghosted the rebound frame).
 - `pack.py` credits the art to Bar Builds and claims no licence for it (the recordings are CC0-1.0).
 
+## Round 3 (2026-11-07 20:11)
+
+- Posters: the first frame within 1.5 dB of the loudest (still "the loudest point"), so marimba, cymbal and
+  chimes show the contact instead of the striker already lifting.
+- Piano: a five-key section (B to G with C#, D#, F#) instead of three keys, so it reads as a keyboard.
+- Ocarina: the breath is 16 soft, warm-white puffs that stretch out of the window and fade (object colour
+  alpha), instead of orange beads.
+- Glockenspiel: a brighter satin nickel (the difference is small).
+
 ## Still off
 
 - Snare wires can't be seen from a 23 degree camera; the snare only rings.
-- The piano reads as an action model (key, hammer, string); small parts in a wide frame.
 - Wide instruments (snare, kick, strumstick, piano) fill the square crop, not a 9:16 one.
 - Hands read as mannequin parts, not hands with skin.
+- The tubular glockenspiel's tube stays a mid grey; stick shafts always leave the frame at the top right.
+- Render speed on this Mac varies with load: 2 s a frame at best, 14 s at worst (piano in round 3).

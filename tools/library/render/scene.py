@@ -869,17 +869,22 @@ def build_piano(C, mats):
     ivory = mat("key_white", "#F5F3EE", 0.25, coat=0.4)
     ebony = mat("key_black", "#1F1F23", 0.22, coat=0.5)
     spruce = grain(mat("spruce", "#D9C29A", 0.6), "#DEC8A2", "#C4A97E", scale=20, along="Y", across="X", bump=0.01)
-    bed = box("keybed", (0.11, 0.33, 0.03), mats["graphite"], bevel=0.003, loc=(0, 0.035, 0.015))
-    rail = box("balance_rail", (0.11, 0.012, 0.004), mats["felt"], bevel=0.001, loc=(0, 0.03, 0.032))
+    bx, bw = 0.047, 0.17                                   # the bed spans B..G
+    bed = box("keybed", (bw, 0.33, 0.03), mats["graphite"], bevel=0.003, loc=(bx, 0.035, 0.015))
+    rail = box("balance_rail", (bw, 0.012, 0.004), mats["felt"], bevel=0.001, loc=(bx, 0.03, 0.032))
+    cheek = [box(f"cheek{s_}", (0.012, 0.20, 0.05), mats["graphite"], bevel=0.003, loc=(bx + s_ * (bw / 2 + 0.006), -0.035, 0.025))
+             for s_ in (-1, 1)]
     zk = 0.034
-    parts = [bed, rail]
+    parts = [bed, rail] + cheek
     def white(name, x, parent=None, off=(0, 0, 0)):
         o = Vector(off)
         top = box(name + "_top", (0.0225, 0.150, 0.010), ivory, bevel=0.0012, loc=Vector((x, -0.060, zk + 0.023)) - o, parent=parent)
         body = box(name + "_body", (0.021, 0.30, 0.018), spruce, bevel=0.001, loc=Vector((x, 0.0125, zk + 0.009)) - o, parent=parent)
         return [top, body]
-    parts += white("key_b", -0.0235) + white("key_d", 0.0235)
-    parts.append(box("key_cs", (0.012, 0.095, 0.012), ebony, bevel=0.0015, loc=(0.01175, -0.0375, zk + 0.034)))
+    for nm, k_ in (("b", -1), ("d", 1), ("e", 2), ("f", 3), ("g", 4)):
+        parts += white("key_" + nm, 0.0235 * k_)
+    for nm, x_ in (("cs", 0.01175), ("ds", 0.03525), ("fs", 0.08225)):
+        parts.append(box("key_" + nm, (0.012, 0.095, 0.012), ebony, bevel=0.0015, loc=(x_, -0.0375, zk + 0.034)))
     kp = empty("key_c_pivot", (0, 0.03, zk))
     set_quat(kp, Quaternion((1, 0, 0), math.radians(3.5)))
     parts += white("key_c", 0.0, parent=kp, off=(0, 0.03, zk))
@@ -887,7 +892,7 @@ def build_piano(C, mats):
     P = Vector((0, 0.255, 0.085))
     H = Vector((0, 0.135, 0.108))
     flange = box("flange", (0.03, 0.02, 0.03), mats["graphite"], bevel=0.002, loc=P - Vector((0, 0, 0.012)))
-    post = box("hammer_rail", (0.11, 0.015, 0.06), mats["graphite"], bevel=0.002, loc=(0, 0.27, 0.045))
+    post = box("hammer_rail", (bw, 0.015, 0.06), mats["graphite"], bevel=0.002, loc=(bx, 0.27, 0.045))
     hp = empty("hammer_pivot", P)
     shank = rod("shank", P, H, 0.003, spruce, kind="cyl")
     molding = box("molding", (0.013, 0.02, 0.014), spruce, bevel=0.002, loc=H + Vector((0, 0, 0.004)))
@@ -985,34 +990,41 @@ def build_ocarina(C, mats):
     nt.nodes.clear()
     out, mix = nt.nodes.new("ShaderNodeOutputMaterial"), nt.nodes.new("ShaderNodeMixShader")
     tr, em, env = nt.nodes.new("ShaderNodeBsdfTransparent"), nt.nodes.new("ShaderNodeEmission"), nt.nodes.new("ShaderNodeValue")
-    em.inputs["Color"].default_value = bb.hex_rgba(ORANGE)
-    mix.inputs[0].default_value = 0.45
+    em.inputs["Color"].default_value = bb.hex_rgba("#F6B089")   # breath: a warm white with the accent in it
+    oi, fade = nt.nodes.new("ShaderNodeObjectInfo"), nt.nodes.new("ShaderNodeMath")
+    fade.operation, fade.inputs[1].default_value = "MULTIPLY", 0.38
+    nt.links.new(oi.outputs["Alpha"], fade.inputs[0])        # each puff fades through its object colour's alpha
+    nt.links.new(fade.outputs[0], mix.inputs[0])
     nt.links.new(tr.outputs[0], mix.inputs[1])
     nt.links.new(em.outputs[0], mix.inputs[2])
     nt.links.new(env.outputs[0], em.inputs["Strength"])
     nt.links.new(mix.outputs[0], out.inputs[0])
-    C.glow(env, gain=2.5, power=1.0)
+    C.glow(env, gain=2.2, power=1.0)
     k = max(1, round(C.env["dur"] * 1.6))
     up = (UP * 1.0 - CH * 0.25 - RIGHT * 0.15).normalized()
     side = up.cross(CH).normalized()
     top = finish("puff_top", _sphere_me("puff_top", 0.01), None, loc=win + up * 0.11, sharp=None)
     top.hide_render = True
     C.fit.append(top)
-    for i in range(9):
-        pf = finish(f"puff{i}", _sphere_me(f"puff{i}", 0.0065, 20), pm, loc=win, sharp=None)
-        def tr_(f, pf=pf, i=i):
-            p = (k * f / C.n + i / 9) % 1.0
-            pf.location = win + up * (0.11 * p) + side * (0.010 * math.sin(TAU * (p * 1.3 + i * 0.37)))
-            s = (0.4 + 1.3 * p) * math.sin(math.pi * p) ** 0.6
-            pf.scale = (s, s, s)
+    N = 16
+    for i in range(N):
+        pf = finish(f"puff{i}", _sphere_me(f"puff{i}", 0.0050, 20), pm, loc=win, sharp=None)
+        drift = C.rng.uniform(-1, 1)
+        def tr_(f, pf=pf, i=i, drift=drift):
+            p = (k * f / C.n + i / N) % 1.0
+            pf.location = win + up * (0.105 * p) + side * (p * (0.014 * math.sin(TAU * (p * 1.2 + i * 0.37)) + 0.010 * drift))
+            s = 0.5 + 1.9 * p
+            pf.scale = (s, s, s * (1.0 + 1.2 * (1 - p)))       # stretched leaving the window, rounder as it slows
+            pf.color = (1, 1, 1, min(1.0, 4 * p) * (1 - p) ** 1.4)
             pf.keyframe_insert("location", frame=f)
             pf.keyframe_insert("scale", frame=f)
+            pf.keyframe_insert("color", frame=f)
         C.tracks.append(tr_)
     C.shiver(grp, UP, 0.0005, 5.5)
 
 
 def build_glockenspiel(C, mats):
-    nickel = mat("nickel", "#D3D3CF", 0.16, 1.0)
+    nickel = mat("nickel", "#E6E6E2", 0.24, 1.0, aniso=0.5)
     base, post = display_stand(C, mats, 0.50, base_r=0.10)
     d = -RIGHT
     E = Vector((0, 0, 0.495)) + d * 0.075

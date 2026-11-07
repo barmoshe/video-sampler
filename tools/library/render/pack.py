@@ -34,6 +34,19 @@ def mux(frames, wav, mp4):
          "-movflags", "+faststart", mp4])
 
 
+def poster_frame(wav, n, within_db=1.5):
+    """The poster is the loudest point (ART.md): the first frame whose RMS is within `within_db` of the loudest
+    frame's, so a hit shows the contact rather than the striker already lifting a frame later."""
+    import math
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", wav, "-ac", "1", "-ar", "48000", "-f", "f32le", "-"],
+                         capture_output=True, check=True).stdout
+    x, hop = np.frombuffer(raw, np.float32), 1600
+    r = np.array([math.sqrt(float(np.mean(x[i * hop:(i + 1) * hop] ** 2)) + 1e-18) for i in range(n)])
+    db = 20 * np.log10(r / r.max())
+    return int(np.argmax(db > -within_db))
+
+
 def poster(png, jpg):
     run(["ffmpeg", "-v", "error", "-y", "-i", png, "-q:v", "3", jpg])
 
@@ -70,7 +83,8 @@ def main():
         n = len([f for f in os.listdir(os.path.join(d, "frames")) if f.endswith(".png")])
         if n != info["frames"]: print(f"skip {sid}: {n} of {info['frames']} frames"); continue
         mux(os.path.join(d, "frames"), os.path.join(AUDIO, sid + ".wav"), os.path.join(LIB, sid + ".mp4"))
-        poster(os.path.join(d, "frames", f"{min(info['peak'], n - 1):04d}.png"), os.path.join(LIB, sid + ".jpg"))
+        pf = poster_frame(os.path.join(AUDIO, sid + ".wav"), n)
+        poster(os.path.join(d, "frames", f"{pf:04d}.png"), os.path.join(LIB, sid + ".jpg"))
         done.append(sid)
         print(f"ok   {sid}  {os.path.getsize(os.path.join(LIB, sid + '.mp4')) // 1024} KB")
     # manifest: every pack sound that has a clip on disk, plus whatever else was there
