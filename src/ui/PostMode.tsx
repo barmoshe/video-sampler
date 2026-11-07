@@ -39,7 +39,7 @@ function Timeline({ take }: { take: Take }) {
   )
 }
 
-export function PostMode({ onExport }: { onExport: () => void }) {
+export function PostMode({ onExport }: { onExport: (song: boolean) => void }) {
   const takes = useStore(app.store, (s) => s.takes)
   const take = useStore(app.store, (s) => s.take)
   const playing = useStore(app.store, (s) => s.playing)
@@ -47,6 +47,8 @@ export function PostMode({ onExport }: { onExport: () => void }) {
   const aspect = useStore(app.store, (s) => s.aspect)
   const kind = useStore(app.store, (s) => s.kind)
   const layout = useStore(app.store, (s) => s.layouts[s.kind])
+  const trackLayout = useStore(app.store, (s) => s.trackLayout)
+  const songLen = useStore(app.store, (s) => s.tracks.reduce((m, t) => t.clips.reduce((n, c) => Math.max(n, c.start + c.len), m), 0))
   const look = useStore(app.store, (s) => s.look)
   const safe = useStore(ui, (u) => u.safe)
   const lookId = LOOKS.find((l) => JSON.stringify(l.look) === JSON.stringify(look))?.id
@@ -81,13 +83,19 @@ export function PostMode({ onExport }: { onExport: () => void }) {
           {ASPECTS.map(([a, l, t]) => <button key={a} type="button" aria-pressed={aspect === a} onClick={() => app.set('aspect', a)} title={t}><span className={`frame f${a.replace(':', '')}`} />{l}</button>)}
           <button type="button" className="toggle" aria-pressed={safe} onClick={() => ui.set({ safe: !safe })} title="Show where the apps put their buttons and captions">Safe zones</button>
         </fieldset>
-        <fieldset className="layouts"><legend className="lab">Layout</legend>
+        <fieldset className="layouts"><legend className="lab">Tracks</legend>
+          {LAYOUTS.filter(([m]) => m === 'gallery' || m === 'mosaic' || m === 'spotlight' || m === 'stack').map(([m, l]) => <button key={m} type="button" aria-pressed={trackLayout === m} onClick={() => { app.set('trackLayout', m); app.stage?.layout.reset() }} title={`The tracks' tiles: ${l}`}><LayoutIcon mode={m} /><span>{l}</span></button>)}
+        </fieldset>
+        <fieldset className="layouts"><legend className="lab">Notes</legend>
           {LAYOUTS.filter(([m]) => m !== 'home' || kind === 'pads').map(([m, l]) => <button key={m} type="button" aria-pressed={layout === m} onClick={() => app.setLayout(m)} title={l}><LayoutIcon mode={m} /><span>{l}</span></button>)}
         </fieldset>
         <fieldset className="looks"><legend className="lab">Look</legend>
           {LOOKS.map((l) => <button key={l.id} type="button" aria-pressed={lookId === l.id} onClick={() => app.set('look', l.look)}>{l.name}</button>)}
         </fieldset>
-        <button type="button" className="btn primary export" disabled={!take || recording} onClick={onExport}>Export MP4</button>
+        <div className="exports">
+          <button type="button" className="btn primary export" disabled={!songLen || recording} onClick={() => onExport(true)} title={songLen ? 'The timeline as an MP4' : 'Put a scene on the timeline first'}>Export the song</button>
+          <button type="button" className="btn export" disabled={!take || recording} onClick={() => onExport(false)}>Export the take</button>
+        </div>
       </div>
     </div>
   )

@@ -11,21 +11,24 @@ import { blocking, support } from './support'
 import { defaultFx, delaySeconds, type FxSettings } from './fx'
 import { askToKeep, canPersist, clearProject, loadProject, packProject, readClipFile, saveClipFile, saveProject, unpackProject, type SavedClip, type SavedProject } from './persist'
 import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
-import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesIn, SECTION_IDS, type Layer, type Section, type Transport } from './looper'
-import type { MainPlace } from './performer'
+import { clicksIn, defaultTransport, LayerRecorder, loopBeats, type Transport } from './looper'
+import { audible, compileSong, newTrack, placeScene, sceneEvents, sceneLen, songEnd, timelineEvents, TimelineRecorder, uid, type Mark, type Mix, type Scene, type SongClip, type SongEvent, type Track, type TrackKind } from './song'
+import { VoiceBook } from './voicebook'
 
-export interface MainState { clipId: string | null; gain: number; alpha: number; place: MainPlace }
 /** Pads performance modes: note repeat at a rate in beats with swing (MPC, Push), and 16 Levels (velocity). */
 export interface PadPlay { repeat: boolean; rate: number; swing: number; levels: boolean }
 /** 16 Levels: pad i of the block plays the selected pad at this velocity (soft bottom-left to hard top-right). */
 export const levelVelocity = (i: number) => Math.round(8 + (i * 119) / 15)
-import { Performer, type InstrumentState, type PlayEvent } from './performer'
-import { CLEAN_LOOK, Stage, type Look } from './stage'
+import { Performer, type InstrumentState, type PlayEvent, type Sink, type TrackMix } from './performer'
+import { CLEAN_LOOK, LOOKS, Stage, type Look } from './stage'
 import { fileOf, loadManifest, type LibraryItem } from './library'
 import { createStore } from './store'
 import { capturePhrase, midiToTake, takeDuration, takeToMidi, type Take, type TakeEvent } from './take'
 import type { Clip, InstrumentKind, LayoutMode, StageAspect } from './types'
 import { exportTake, type ExportOptions } from './export'
+
+/** Where a new clip goes: a pad, a layer, or a video or backing track at a beat. */
+export interface Target { pad?: number; layer?: string; track?: string; at?: number }
 
 export interface AppState {
   clips: Clip[]
@@ -41,17 +44,21 @@ export interface AppState {
   octave: number
   scale: ScaleSetting
   transport: Transport
-  loopLayers: Layer[] // the looper's layers (not the Layers instrument)
-  redoLayers: Layer[]
-  looping: boolean // the transport runs (loops play, the metronome clicks)
-  loopRec: boolean // live playing is being recorded into layers, one per pass
-  bar: number // the current bar (for the UI), −1 during the count-in
+  // the song (ADR 0773): tracks, the board's scenes and the timeline; kind/clip/pads/layers above are
+  // the selected track's instrument, written back into its track when another track is selected
+  tracks: Track[]
+  sel: string // the selected track
+  scenes: Scene[]
+  marks: Mark[] // where scenes were placed on the timeline
+  view: 'board' | 'timeline'
+  trackLayout: LayoutMode // how the stage arranges the tracks' tiles
+  songOn: 'board' | 'timeline' | null // what is playing
+  sceneOn: string | null // the board's scene that is playing
+  queuedScene: string | null // the scene that starts on the next bar
+  songRec: 'board' | 'timeline' | null // live playing is being recorded into the selected track
+  pos: number // the timeline's playhead when stopped (beats)
   fx: FxSettings // the effects bus's returns and glue
   padPlay: PadPlay // Pads performance modes (Push / MPC): note repeat, 16 Levels
-  main: MainState // the current section's main video
-  sections: Section<MainState, LayoutMode>[] // the other sections' state (the current one lives in loopLayers, main, layouts)
-  section: string // the current section
-  queued: string | null // the section that starts on the next bar
   velocity: number
   active: number[]
   recording: boolean
@@ -77,9 +84,9 @@ export interface AppState {
 export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx, bpm), feedback: fx.delay.feedback, level: fx.delay.level, decay: fx.reverb.decay, reverb: fx.reverb.level })
 
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
-const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take', 'takes', 'look'] as const
+const UNDO_KEYS = ['kind', 'clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'tracks', 'sel', 'scenes', 'marks', 'trackLayout', 'fx', 'take', 'takes', 'look'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
-const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay'] as const
+const SAVE_KEYS = [...UNDO_KEYS, 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay', 'view', 'pos'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
 const pick = <K extends keyof AppState>(s: AppState, keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<AppState, K>
 
@@ -88,10 +95,11 @@ const initial = (): AppState => ({
   clip: defaultClipParams(), pads: defaultPadsParams(), layers: defaultLayersParams(), bendRange: 2,
   layouts: { clip: 'gallery', pads: 'home', layers: 'gallery' }, aspect: '16:9', fit: false,
   octave: 0, scale: defaultScale(), velocity: 100,
-  transport: defaultTransport(), loopLayers: [], redoLayers: [], looping: false, loopRec: false, bar: 0,
-  main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' }, fx: defaultFx(),
+  transport: defaultTransport(), fx: defaultFx(),
+  tracks: [], sel: '', scenes: [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }], marks: [], view: 'board', trackLayout: 'gallery',
+  songOn: null, sceneOn: null, queuedScene: null, songRec: null, pos: 0,
   padPlay: { repeat: false, rate: 0.25, swing: 0, levels: false },
-  sections: [], section: 'A', queued: null, active: [], recording: false, take: null, takes: [], playing: false,
+  active: [], recording: false, take: null, takes: [], playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
   savedAt: null, canUndo: false, canRedo: false, look: CLEAN_LOOK, starting: false,
 })
@@ -100,8 +108,13 @@ export class App {
   store = createStore<AppState>(initial())
   ctx = new AudioContext({ latencyHint: 'interactive' })
   engine: AudioEngine | null = null
-  performer: Performer | null = null
   stage: Stage | null = null
+  readonly book = new VoiceBook() // every track's voices, so the stage and the export see one song
+  base: Performer | null = null // the song's own voice: backing beds, picture cues, takes with no track
+  performers = new Map<string, Performer>() // one per instrument and video track
+  private sink!: Sink
+  /** The selected track's performer: where the keys, pads and MIDI play. */
+  get performer(): Performer | null { return this.performers.get(this.store.get().sel) ?? this.base }
   clips = new Map<string, Clip>()
   levels = new Map<string, { fwd: Float32Array[][]; rev: Float32Array[][] }>()
   private rec: { start: number; events: TakeEvent[] } | null = null
@@ -125,16 +138,10 @@ export class App {
     if (stop) { this.say(stop); return }
     this.engine = await AudioEngine.create(this.ctx)
     this.engine.setFx(this.store.get().fx, this.store.get().transport.bpm)
-    this.performer = new Performer(this.instrumentState(), this.clips, {
-      send: (evs) => { void this.engine!.events(evs) },
-      frameOf: (t) => Math.round(t * this.ctx.sampleRate),
-    })
-    this.performer.onPlay = (ev, t) => {
-      if (this.replaying) return
-      if (this.rec) this.rec.events.push({ t: t - this.rec.start, ev })
-      this.captureBuf.push({ t, ev }) // Capture's always-on memory: the last two minutes
-      if (this.captureBuf.length > 4000 || this.captureBuf[0].t < t - 120) this.captureBuf = this.captureBuf.filter((e) => e.t >= t - 120).slice(-4000)
-    }
+    this.sink = { send: (evs) => { void this.engine!.events(evs) }, frameOf: (t) => Math.round(t * this.ctx.sampleRate) }
+    this.base = new Performer(this.instrumentState(), this.clips, this.sink, { book: this.book })
+    this.base.onPlay = this.hook(this.base)
+    this.ensureSong()
     void this.restore().then((had) => { if (!had) void this.loadStarter() })
   }
 
@@ -142,7 +149,37 @@ export class App {
     const s = this.store.get()
     return { kind: s.kind, clip: s.clip, pads: s.pads, layers: s.layers, bendRange: s.bendRange }
   }
-  private syncPerformer() { if (this.performer) this.performer.state = this.instrumentState() }
+  /** Takes and Capture hear every performer; a note is tagged with its track so it replays on it. */
+  private hook(p: Performer) {
+    return (ev: PlayEvent, t: number) => {
+      if (ev.type === 'main') this.mainOn = ev.clipId ? { clipId: ev.clipId, at: t - (ev.offset ?? 0), gain: ev.gain } : null
+      if (this.replaying) return
+      const tagged: PlayEvent = p.track && (ev.type === 'on' || ev.type === 'off') ? { ...ev, track: p.track } : ev
+      if (this.rec) this.rec.events.push({ t: t - this.rec.start, ev: tagged })
+      this.captureBuf.push({ t, ev: tagged }) // Capture's always-on memory: the last two minutes
+      if (this.captureBuf.length > 4000 || this.captureBuf[0].t < t - 120) this.captureBuf = this.captureBuf.filter((e) => e.t >= t - 120).slice(-4000)
+    }
+  }
+  private mainOn: { clipId: string; at: number; gain: number } | null = null
+
+  /** Keep one performer per instrument and video track, each on its track's instrument. */
+  private syncPerformer() {
+    if (!this.base) return
+    const s = this.store.get()
+    this.base.state = this.instrumentState()
+    const keep = new Set<string>()
+    for (const t of s.tracks) {
+      if (t.kind !== 'instrument' && t.kind !== 'video') continue
+      keep.add(t.id)
+      const state = t.id === s.sel ? this.instrumentState() : { ...t.inst, bendRange: s.bendRange }
+      const p = this.performers.get(t.id)
+      if (p) { p.state = state; continue }
+      const np = new Performer(state, this.clips, this.sink, { book: this.book, track: t.id, mix: () => this.mixOf(t.id) })
+      np.onPlay = this.hook(np)
+      this.performers.set(t.id, np)
+    }
+    for (const [id, p] of this.performers) if (!keep.has(id)) { p.panic(this.ctx.currentTime); this.performers.delete(id) }
+  }
 
   // ---------- undo, autosave, restore (production.md §3 J) ---------------------------------------
   history = new History<UndoDoc>(() => pick(this.store.get(), UNDO_KEYS), (d) => this.store.set(d))
@@ -212,7 +249,7 @@ export class App {
   }
 
   /** A pack sound onto the Clip, a pad or a new layer (wherever the player is working). */
-  async loadItem(item: LibraryItem, target?: { pad?: number; layer?: string }) {
+  async loadItem(item: LibraryItem, target?: Target) {
     const have = this.store.get().clips.find((c) => c.name === item.name) // already in the project: no second import
     if (have) { this.assign(have, target); return }
     try { await this.importFiles([await fileOf(item)], target) } catch (e) { this.say((e as Error).message) }
@@ -253,6 +290,7 @@ export class App {
         ;(merged as Record<string, unknown>)[k] = v && typeof v === 'object' && !Array.isArray(v) && b && typeof b === 'object' && !Array.isArray(b) ? { ...b, ...v } : v
       }
       this.store.set({ ...merged, importing: null, savedAt: p.savedAt })
+      this.ensureSong()
       this.say(done)
     } catch (e) {
       this.say(`Could not open the project: ${(e as Error).message}`)
@@ -307,22 +345,30 @@ export class App {
   private lastCount = 0
   private drawLive(now: number) {
     const s = this.store.get()
-    if (!this.stage || !this.performer || s.exporting) return
+    if (!this.stage || !this.base || s.exporting) return
     // math §2 with the hand films' calibration: draw for the audio audible when this frame reaches
     // the eye, one frame plus the measured picture offset ahead
     const t = audibleAt(this.ctx, now) + 1 / 60 + s.pictureOffsetMs / 1000
-    const n = this.stage.drawAt(t, now / 1000, this.performer.book.voices, this.clips, {
+    let layout = s.trackLayout, look = s.look
+    for (const c of this.cues) if (c.t <= t) { if (c.layout) layout = c.layout; if (c.look) look = c.look }
+    const n = this.stage.drawAt(t, now / 1000, this.book.voices, this.clips, {
       mode: s.layouts[s.kind], fit: s.fit, homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(),
-      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section, echo: echoOf(s.fx, s.transport.bpm), look: s.look,
+      echo: echoOf(s.fx, s.transport.bpm), look,
+      tracks: this.trackTiles(), trackMode: layout, holdTracks: s.songOn ? 1e9 : 2.5,
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
-    if (Math.random() < 0.02) this.performer.book.prune(this.ctx.currentTime)
+    if (Math.random() < 0.02) this.book.prune(this.ctx.currentTime)
   }
 
   bankBase() { return PAD_BASE + this.store.get().pads.bank * 16 }
   homeCells() {
-    const base = this.bankBase(), chains = this.store.get().pads.chains
-    return Array.from({ length: 16 }, (_, i) => ({ key: `p:${base + i}`, order: i, clipId: chains.find((c) => c.note === base + i)?.clipId ?? null }))
+    const base = this.bankBase(), s = this.store.get(), chains = s.pads.chains
+    return Array.from({ length: 16 }, (_, i) => ({ key: `p:${base + i}@${s.sel}`, order: i, clipId: chains.find((c) => c.note === base + i)?.clipId ?? null, track: s.sel }))
+  }
+  /** The tracks as the stage lays them out: their order, and how each lays out its own notes. */
+  trackTiles() {
+    const s = this.store.get()
+    return this.songTracks().filter((t) => t.kind === 'instrument' || t.kind === 'video').map((t, i) => ({ id: t.id, order: i, mode: t.kind === 'video' ? 'gallery' as const : s.layouts[t.inst.kind] }))
   }
 
   // ---------- playing ----------------------------------------------------------------------------
@@ -353,7 +399,7 @@ export class App {
       const notes = melodic ? chordNotes(root, s.scale) : [played]
       if (this.chords.has(key)) this.handlers.noteOff(key, ts) // a retrigger releases the old chord first
       this.chords.set(key, notes)
-      if (this.recorder) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recorder.on(n, vel, at) }
+      if (this.recording()) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recOn(n, vel, at) }
       for (const n of notes) {
         this.held.set(n, (this.held.get(n) ?? 0) + 1)
         this.play({ type: 'on', note: n, vel }, ts)
@@ -365,7 +411,7 @@ export class App {
       this.repeaters.delete(key)
       const notes = this.chords.get(key) ?? [key]
       this.chords.delete(key)
-      if (this.recorder) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recorder.off(n, at) }
+      if (this.recording()) { const at = scheduleTime(this.ctx, ts, this.latencyMs()); for (const n of notes) this.recOff(n, at) }
       const off: number[] = []
       for (const n of notes) {
         const c = (this.held.get(n) ?? 1) - 1
@@ -403,10 +449,10 @@ export class App {
         velocity: () => s.velocity,
         octave: (d) => this.store.set((x) => ({ octave: Math.max(-5, Math.min(4, x.octave + d)) })),
         velocityStep: (d) => this.store.set((x) => ({ velocity: Math.max(1, Math.min(127, x.velocity + d)) })),
-        record: () => this.toggleRecord(),
+        record: () => this.songRecord(),
         capture: () => this.capture(),
-        loopRecord: () => this.loopRecord(),
-        section: (i: number) => { const ids = [this.store.get().section, ...this.store.get().sections.map((x) => x.id)].sort(); if (ids[i]) this.switchSection(ids[i]) },
+        loopRecord: () => this.songRecord(),
+        section: (i: number) => { const sc = this.store.get().scenes[i]; if (sc) this.launchScene(sc.id) },
       }
     })
     return () => { detach(); removeEventListener('keydown', undoKeys) }
@@ -422,10 +468,10 @@ export class App {
     this.play({ type: 'macro', index, value }, ts)
   }
 
-  panic() { this.performer?.panic(this.ctx.currentTime); this.store.set({ active: [] }) }
+  panic() { for (const p of this.performers.values()) p.panic(this.ctx.currentTime); this.base?.panic(this.ctx.currentTime); this.store.set({ active: [] }) }
 
   // ---------- clips ------------------------------------------------------------------------------
-  async importFiles(files: File[], target?: { pad?: number; layer?: string }) {
+  async importFiles(files: File[], target?: Target) {
     await this.ready
     if (!this.engine) return // the browser lacks what the app needs (the message is already showing)
     for (const f of files) {
@@ -450,8 +496,16 @@ export class App {
   }
 
   /** A new clip goes where the player is working: the Clip, a pad, or a new layer. */
-  private assign(clip: Clip, target?: { pad?: number; layer?: string }) {
+  private assign(clip: Clip, target?: Target) {
     const s = this.store.get()
+    // a video or backing track takes the video as it is: on the timeline at the playhead (ADR 0773)
+    const tr = this.songTracks().find((t) => t.id === (target?.track ?? s.sel))
+    if (tr && (tr.kind === 'backing' || tr.kind === 'video') && target?.pad === undefined && target?.layer === undefined) {
+      const inst = { ...tr.inst, clip: { ...tr.inst.clip, clipId: clip.id } }
+      if (tr.kind === 'video') { if (tr.id === s.sel) this.setClip({ clipId: clip.id }); else this.setTrack(tr.id, { inst }) }
+      this.placeMedia(clip, { ...tr, inst }, target?.at ?? s.pos)
+      return
+    }
     const trim = Math.max(-12, Math.min(12, -16 - clip.loudness)) // math §13: pads levelled to −16 LUFS
     if (s.kind === 'pads' || target?.pad !== undefined) {
       const base = this.bankBase()
@@ -514,98 +568,210 @@ export class App {
   set<K extends keyof AppState>(k: K, v: AppState[K]) { this.store.set({ [k]: v } as Partial<AppState>) }
   say(message: string | null) { this.store.set({ message }) }
 
-  // ---------- looper, transport, main video (ADR 0771) ------------------------------------------
-  private loopT0 = 0
-  private loopTimer = 0
-  private scheduledTo = 0
-  private recorder: LayerRecorder | null = null
-  private recPass = 0
-  private nextLayer = 1
-  private mainOn: { clipId: string; at: number } | null = null
+  // ---------- the song: tracks, the board and the timeline (ADR 0773) ----------------------------
+  /** The playhead, apart from the store: it moves twenty times a second and only the views that show it listen. */
+  clock = createStore({ beat: 0 })
+  private songT0 = 0 // audio time of beat 0 (the timeline's start, or the scene's launch on the board)
+  private schedBeat = 0 // scheduled up to this beat
+  private clickedTo = 0 // metronome scheduled up to this audio time
+  private songTimer = 0
+  private sceneOrigin = 0 // the beat the playing scene started on
+  private firstWindow = false
+  private boardRec: { rec: LayerRecorder; pass: number; len: number; scene: string; track: string } | null = null
+  private tlRec: { rec: TimelineRecorder; track: string } | null = null
+  private cues: { t: number; layout?: LayoutMode; look?: Look }[] = [] // picture cues already scheduled (live)
   private clickBufs: [AudioBuffer, AudioBuffer] | null = null
 
+  /** A song always has a track: an old project or a first visit gets one, on the current instrument. */
+  private ensureSong() {
+    const s = this.store.get()
+    if (s.tracks.length && s.tracks.some((t) => t.id === s.sel)) return
+    if (s.tracks.length) { const t = s.tracks.find((x) => x.kind === 'instrument' || x.kind === 'video') ?? s.tracks[0]; this.store.set({ sel: t.id, kind: t.inst.kind, clip: t.inst.clip, pads: t.inst.pads, layers: t.inst.layers }); return }
+    const t = newTrack('instrument', { kind: s.kind, clip: s.clip, pads: s.pads, layers: s.layers }, 0, 'Keys')
+    this.store.set({ tracks: [t], sel: t.id })
+  }
+
+  /** The tracks with the selected one's instrument as it is now (the store keeps it apart while selected). */
+  songTracks(): Track[] {
+    const s = this.store.get()
+    return s.tracks.map((t) => (t.id === s.sel ? { ...t, inst: { kind: s.kind, clip: s.clip, pads: s.pads, layers: s.layers } } : t))
+  }
+  selected(): Track | undefined { return this.songTracks().find((t) => t.id === this.store.get().sel) }
+
+  mixOf(id: string): TrackMix {
+    const s = this.store.get(), t = s.tracks.find((x) => x.id === id)
+    return t ? { gain: Math.pow(10, t.mix.volume / 20), pan: t.mix.pan, on: audible(t, s.tracks) } : { gain: 1, pan: 0, on: true }
+  }
+  /** Where an event plays: a note on its track's performer, everything else on the song's own. */
+  private route(ev: PlayEvent): Performer {
+    const id = (ev.type === 'on' || ev.type === 'off') && ev.track ? ev.track : null
+    return (id && this.performers.get(id)) || this.base!
+  }
+
+  selectTrack(id: string) {
+    const s = this.store.get()
+    const t = s.tracks.find((x) => x.id === id)
+    if (!t || id === s.sel) return
+    this.store.set({ tracks: this.songTracks(), sel: id, kind: t.inst.kind, clip: t.inst.clip, pads: t.inst.pads, layers: t.inst.layers })
+    this.followHome()
+  }
+
+  /** A new track of a kind; instrument and video tracks are selected so the keys play them. */
+  addTrack(kind: TrackKind): Track {
+    const s = this.store.get()
+    const inst = { kind: 'clip' as const, clip: defaultClipParams(), pads: defaultPadsParams(), layers: defaultLayersParams() }
+    if (kind === 'video') inst.clip = { ...inst.clip, mode: 'oneshot', tune: 'original', loop: false }
+    const t = newTrack(kind, inst, s.tracks.length)
+    this.store.set({ tracks: [...this.songTracks(), t] })
+    if (kind === 'instrument' || kind === 'video') this.selectTrack(t.id)
+    return t
+  }
+  removeTrack(id: string) {
+    const s = this.store.get()
+    const left = s.tracks.filter((t) => t.id !== id)
+    if (!left.some((t) => t.kind === 'instrument' || t.kind === 'video')) { this.say('A song keeps at least one instrument or video track.'); return }
+    if (id === s.sel) this.selectTrack(left.find((t) => t.kind === 'instrument' || t.kind === 'video')!.id)
+    this.store.set((x) => ({ tracks: x.tracks.filter((t) => t.id !== id) }))
+  }
+  setTrack(id: string, p: Partial<Omit<Track, 'mix'>>) { this.store.set((s) => ({ tracks: s.tracks.map((t) => (t.id === id ? { ...t, ...p } : t)) })) }
+  /** The fader, pan, mute and solo; held notes follow the fader at once. */
+  setMix(id: string, p: Partial<Mix>) {
+    const before = new Map([...this.performers].map(([k]) => [k, this.mixOf(k).gain]))
+    this.store.set((s) => ({ tracks: s.tracks.map((t) => (t.id === id ? { ...t, mix: { ...t.mix, ...p } } : t)) }))
+    for (const [k, p2] of this.performers) p2.retrack(this.mixOf(k).on ? this.mixOf(k).gain / (before.get(k) || 1) : 1, this.ctx.currentTime)
+    if (p.mute || p.solo !== undefined) for (const [k, p2] of this.performers) if (!this.mixOf(k).on) p2.panic(this.ctx.currentTime)
+  }
+
+  addScene() {
+    const s = this.store.get()
+    const id = 'ABCDEFGHIJKL'.split('').find((x) => !s.scenes.some((sc) => sc.id === x))
+    if (id) this.store.set({ scenes: [...s.scenes, { id, name: id }] })
+  }
+  setCell(track: string, scene: string, clip: SongClip | null) {
+    this.store.set((s) => ({ tracks: s.tracks.map((t) => {
+      if (t.id !== track) return t
+      const cells = { ...t.cells }
+      if (clip) cells[scene] = clip; else delete cells[scene]
+      return { ...t, cells }
+    }) }))
+  }
+  setClipAt(track: string, id: string, p: Partial<SongClip> | null) {
+    this.store.set((s) => ({ tracks: s.tracks.map((t) => (t.id !== track ? t : { ...t, clips: p === null ? t.clips.filter((c) => c.id !== id) : t.clips.map((c) => (c.id === id ? { ...c, ...p } : c)).sort((a, b) => a.start - b.start) })) }))
+  }
+  /** A scene from the board onto the timeline: at the song's end, or at `at` beats. */
+  placeScene(scene: string, at = songEnd(this.songTracks())) {
+    const s = this.store.get()
+    const { tracks, mark } = placeScene(s.tracks, scene, at, s.transport.beats)
+    if (mark.len && !tracks.some((t, i) => t !== s.tracks[i])) { this.say(`Scene ${scene} is empty: record or load something into it first.`); return }
+    this.store.set({ tracks, marks: [...s.marks.filter((m) => m.at + m.len <= at || m.at >= at + mark.len), mark].sort((a, b) => a.at - b.at) })
+  }
+  setPos(beat: number) { const b = Math.max(0, beat); this.store.set({ pos: b }); this.clock.set({ beat: b }) }
+
+  // ---- the transport
   setTransport(p: Partial<Transport>) {
     const s = this.store.get()
-    if (s.looping && ('bpm' in p || 'bars' in p || 'beats' in p) && s.loopLayers.length) { this.say('Stop the loop to change its tempo or length.'); return }
+    if (s.songOn && ('bpm' in p || 'beats' in p)) { this.say('Stop the song to change its tempo.'); return }
     this.store.set({ transport: { ...s.transport, ...p } })
   }
+  private spb() { return 60 / this.store.get().transport.bpm }
 
-  /** Start the transport: a bar of count-in if asked, then loops, the metronome and the main video. */
-  loopStart(countIn = this.store.get().transport.countIn) {
-    if (this.store.get().looping || !this.performer) return
+  /** Play the board (from the selected scene) or the timeline (from the playhead). */
+  songStart(where: 'board' | 'timeline' = this.store.get().view, countIn = false) {
+    if (!this.base) return
+    this.songStop()
     void this.ctx.resume()
-    const tr = this.store.get().transport
-    const bar = (60 / tr.bpm) * tr.beats
-    this.loopT0 = this.ctx.currentTime + 0.12 + (countIn ? bar : 0)
-    this.scheduledTo = this.ctx.currentTime
-    this.store.set({ looping: true, bar: countIn ? -1 : 0 })
-    const main = this.store.get().main
-    if (main.clipId) this.startMain(main.clipId, this.loopT0)
-    this.loopTimer = window.setInterval(() => this.loopTick(), 25)
+    const s = this.store.get(), spb = this.spb(), lead = 0.12 + (countIn ? spb * s.transport.beats : 0)
+    const start = this.ctx.currentTime + lead
+    if (where === 'timeline') {
+      this.songT0 = start - s.pos * spb
+      this.schedBeat = s.pos
+    } else {
+      const scene = s.queuedScene ?? s.sceneOn ?? s.scenes[0]?.id ?? null
+      this.songT0 = start
+      this.schedBeat = 0
+      this.sceneOrigin = 0
+      this.store.set({ sceneOn: scene, queuedScene: null })
+    }
+    this.clickedTo = this.ctx.currentTime
+    this.firstWindow = true
+    this.cues = []
+    this.store.set({ songOn: where })
+    this.songTimer = window.setInterval(() => this.songTick(), 25)
   }
 
-  loopStop() {
-    if (!this.store.get().looping) return
-    clearInterval(this.loopTimer)
-    if (this.recorder) this.closeLayer(this.ctx.currentTime)
-    this.recorder = null
-    this.performer?.panic(this.ctx.currentTime)
-    this.stopMain()
-    this.store.set({ looping: false, loopRec: false, bar: 0 })
-  }
-
-  /** Record live playing into layers, one per pass, until pressed again (the RC-505's overdub). */
-  loopRecord() {
+  songStop() {
     const s = this.store.get()
-    if (s.loopRec) {
-      if (this.recorder) this.closeLayer(this.ctx.currentTime)
-      this.recorder = null
-      this.store.set({ loopRec: false })
-      return
-    }
-    if (!s.looping) this.loopStart()
-    const L = loopSeconds(this.store.get().transport)
-    this.recPass = Math.max(0, Math.floor((this.ctx.currentTime - this.loopT0) / L))
-    this.recorder = new LayerRecorder(this.loopT0, this.store.get().transport)
-    this.store.set({ loopRec: true })
+    if (!s.songOn) return
+    clearInterval(this.songTimer)
+    const now = this.ctx.currentTime
+    this.closeRecording(now)
+    for (const p of this.performers.values()) p.panic(now)
+    this.base?.play({ type: 'main', clipId: null, gain: 0 }, now)
+    this.cues = []
+    this.store.set({ songOn: null, sceneOn: s.songOn === 'board' ? null : s.sceneOn, queuedScene: null, songRec: null, active: [] })
+    if (s.songOn === 'timeline') this.clock.set({ beat: s.pos })
   }
 
-  private closeLayer(t: number) {
-    if (!this.recorder) return
-    const notes = this.recorder.finish(t)
-    if (notes.length) this.store.set((s) => ({ loopLayers: [...s.loopLayers, { id: this.nextLayer++, notes, muted: false }], redoLayers: [] }))
+  /** A scene on the board: at once when stopped, on the next bar while the board plays. */
+  launchScene(id: string) {
+    const s = this.store.get()
+    if (s.songOn === 'board') { if (id !== s.sceneOn) this.store.set({ queuedScene: id }); return }
+    this.store.set({ sceneOn: id, view: 'board' })
+    this.songStart('board')
   }
 
-  loopUndo() { this.store.set((s) => (s.loopLayers.length ? { loopLayers: s.loopLayers.slice(0, -1), redoLayers: [...s.redoLayers, s.loopLayers[s.loopLayers.length - 1]] } : {})) }
-  loopRedo() { this.store.set((s) => (s.redoLayers.length ? { loopLayers: [...s.loopLayers, s.redoLayers[s.redoLayers.length - 1]], redoLayers: s.redoLayers.slice(0, -1) } : {})) }
-  muteLayer(id: number) { this.store.set((s) => ({ loopLayers: s.loopLayers.map((l) => (l.id === id ? { ...l, muted: !l.muted } : l)) })) }
-  loopClear() { this.loopStop(); this.store.set({ loopLayers: [], redoLayers: [] }) }
-
-  /** Every 25 ms: schedule the next 150 ms of loop notes and clicks on the audio clock. */
-  private loopTick() {
-    const s = this.store.get(), tr = s.transport, now = this.ctx.currentTime
-    const from = this.scheduledTo
-    const switchAt = s.queued ? nextBar(Math.max(from, now), this.loopT0, tr) : Infinity
-    const to = Math.min(now + 0.15, switchAt)
-    for (const x of notesIn(s.loopLayers, this.loopT0, tr, Math.max(from, this.loopT0), to)) {
-      const src = 100 + x.layer, cell = `L:${s.section}:${x.layer}`
-      this.performer!.play({ type: 'on', note: x.n.note, vel: x.n.vel, src, cell }, x.on)
-      this.performer!.play({ type: 'off', note: x.n.note, src }, x.off)
-    }
-    const countIn = this.loopT0 - (60 / tr.bpm) * tr.beats
-    if (tr.metronome || now < this.loopT0) for (const c of clicksIn(Math.min(countIn, this.loopT0), tr, Math.max(from, countIn), to)) this.click(c.t, c.accent)
-    this.scheduledTo = to
-    if (s.queued && to >= switchAt) { this.applySection(s.queued, switchAt); return }
-    // a recording pass ends at the loop boundary: its notes become a layer, the next pass records anew
-    const L = loopSeconds(tr), pass = Math.floor((now - this.loopT0) / L)
-    if (this.recorder && pass > this.recPass) {
-      this.closeLayer(this.loopT0 + pass * L)
-      this.recorder = new LayerRecorder(this.loopT0, tr)
-      this.recPass = pass
-    }
-    const bar = now < this.loopT0 ? -1 : Math.floor((now - this.loopT0) / ((60 / tr.bpm) * tr.beats)) % tr.bars
-    if (bar !== s.bar) this.store.set({ bar })
+  private fire(e: SongEvent, t: number) {
+    const ev = e.ev
+    if (ev.type === 'layout') { this.cues.push({ t, layout: ev.mode }); this.base!.play(ev, t); return }
+    if (ev.type === 'look') { const l = LOOKS.find((x) => x.id === ev.look); if (l) this.cues.push({ t, look: l.look }); this.base!.play(ev, t); return }
+    this.route(ev).play(ev, t)
   }
+
+  /** Every 25 ms: the next 150 ms of the board or the timeline, the metronome, and recording passes. */
+  private songTick() {
+    const s = this.store.get(), tr = s.transport, spb = this.spb(), now = this.ctx.currentTime
+    const tracks = this.songTracks()
+    const horizon = now + 0.15
+    let from = this.schedBeat
+    const to = (horizon - this.songT0) / spb
+    if (to > from) {
+      if (s.songOn === 'timeline') {
+        for (const e of timelineEvents(tracks, from, to, this.firstWindow, spb)) this.fire(e, this.songT0 + e.beat * spb)
+        this.firstWindow = false
+        const end = songEnd(tracks)
+        if (!this.tlRec && from > Math.max(end, s.pos) + tr.beats) { this.store.set({ pos: 0 }); this.songStop(); return }
+      } else if (s.sceneOn) {
+        let scene = s.sceneOn
+        if (s.queuedScene) { // the queued scene starts on the next bar
+          const bar = tr.beats, nb = Math.ceil(from / bar - 1e-9) * bar
+          if (nb < to) {
+            for (const e of sceneEvents(tracks, scene, this.sceneOrigin, sceneLen(tracks, scene, tr.beats), from, nb)) this.fire(e, this.songT0 + e.beat * spb)
+            if (this.boardRec) this.closeBoardPass(this.songT0 + nb * spb, true)
+            for (const p of this.performers.values()) p.panic(this.songT0 + nb * spb)
+            this.sceneOrigin = nb
+            scene = s.queuedScene
+            from = nb
+            this.store.set({ sceneOn: scene, queuedScene: null })
+            if (s.songRec === 'board') this.openBoardPass(this.songT0 + nb * spb)
+          }
+        }
+        for (const e of sceneEvents(tracks, scene, this.sceneOrigin, sceneLen(tracks, scene, tr.beats), from, to)) this.fire(e, this.songT0 + e.beat * spb)
+      }
+      this.schedBeat = to
+    }
+    if (tr.metronome || now < this.songT0 + this.schedBeatStart()) {
+      for (const c of clicksIn(this.songT0, tr, Math.max(this.clickedTo, now), horizon)) this.click(c.t, c.accent)
+    }
+    this.clickedTo = horizon
+    // a board recording pass ends where its loop does: its notes join the cell, the next pass records anew
+    if (this.boardRec) {
+      const pass = Math.floor(((now - this.songT0) / spb - this.sceneOrigin) / this.boardRec.len)
+      if (pass > this.boardRec.pass) this.closeBoardPass(this.songT0 + (this.sceneOrigin + pass * this.boardRec.len) * spb, false)
+    }
+    const beat = Math.max(0, (now - this.songT0) / spb - (s.songOn === 'board' ? this.sceneOrigin : 0))
+    this.clock.set({ beat })
+  }
+  private schedBeatStart() { return this.store.get().songOn === 'timeline' ? this.store.get().pos * this.spb() : 0 }
 
   /** The metronome: a short tick on the audio clock, not recorded in takes or exports. */
   private click(t: number, accent: boolean) {
@@ -624,71 +790,107 @@ export class App {
     src.start(Math.max(t, this.ctx.currentTime))
   }
 
-  /** The main video behind the tiles: its picture and its sound, looping (ADR 0771). */
-  setMain(p: Partial<AppState['main']>) {
-    const before = this.store.get().main
-    this.store.set((s) => ({ main: { ...s.main, ...p } }))
-    const m = this.store.get().main
-    if ('clipId' in p || 'place' in p || ('gain' in p && m.gain !== before.gain)) {
-      if (m.clipId) this.startMain(m.clipId, this.ctx.currentTime + 0.05)
-      else this.stopMain()
+  // ---- recording into the selected track: a board cell (one pass at a time, overdubbing) or the timeline
+  private recording() { return !!(this.boardRec || this.tlRec) }
+  private recOn(n: number, vel: number, t: number) { this.boardRec?.rec.on(n, vel, t); this.tlRec?.rec.on(n, vel, t) }
+  private recOff(n: number, t: number) { this.boardRec?.rec.off(n, t); this.tlRec?.rec.off(n, t) }
+
+  /** Record into the selected track (` key): the board's playing scene, or the timeline from the playhead. */
+  songRecord() {
+    const s = this.store.get()
+    if (s.songRec) { this.closeRecording(this.ctx.currentTime); this.store.set({ songRec: null }); return }
+    const t = this.selected()
+    if (!t || (t.kind !== 'instrument' && t.kind !== 'video')) { this.say('Select an instrument track to record into.'); return }
+    if (s.view === 'board') {
+      if (s.songOn !== 'board') this.songStart('board', s.transport.countIn)
+      this.store.set({ songRec: 'board' })
+      this.openBoardPass(Math.max(this.ctx.currentTime, this.songT0))
+    } else {
+      if (s.songOn !== 'timeline') this.songStart('timeline', s.transport.countIn)
+      this.tlRec = { rec: new TimelineRecorder(this.songT0, this.store.get().transport), track: t.id }
+      this.store.set({ songRec: 'timeline' })
     }
   }
-  private startMain(clipId: string, at: number, fromStart = false) {
-    const clip = this.clips.get(clipId)
-    if (!clip || !this.performer) return
-    const offset = !fromStart && this.mainOn && this.mainOn.clipId === clipId ? (at - this.mainOn.at) % clip.duration : 0
-    const m = this.store.get().main
-    this.performer.play({ type: 'main', clipId, gain: m.gain, offset, place: m.place }, at)
-    this.mainOn = { clipId, at: at - offset }
+  private openBoardPass(t: number) {
+    const s = this.store.get(), scene = s.sceneOn
+    const track = this.selected()
+    if (!scene || !track) return
+    const tr = s.transport, have = track.cells[scene]
+    const len = have?.loop ?? loopBeats(tr)
+    const spb = this.spb(), origin = this.songT0 + this.sceneOrigin * spb
+    const pass = Math.max(0, Math.floor(((t - origin) / spb) / len))
+    this.boardRec = { rec: new LayerRecorder(origin, { ...tr, bars: len / tr.beats }), pass, len, scene, track: track.id }
   }
-  private stopMain(at = this.ctx.currentTime) {
-    this.performer?.play({ type: 'main', clipId: null, gain: 0 }, at)
-    this.mainOn = null
-  }
-
-  /** Go to a section: on the next bar while the loops run, at once otherwise. */
-  switchSection(id: string) {
-    const s = this.store.get()
-    if (id === s.section) { if (s.queued) this.store.set({ queued: null }); return }
-    if (!s.sections.some((x) => x.id === id)) return
-    if (s.looping) this.store.set({ queued: id })
-    else this.applySection(id, this.ctx.currentTime)
-  }
-
-  /** A new empty section after the last, with the current main video and layout; switch to it. */
-  addSection() {
-    const s = this.store.get()
-    const used = new Set([s.section, ...s.sections.map((x) => x.id)])
-    const id = SECTION_IDS.find((x) => !used.has(x))
-    if (!id) return
-    this.store.set({ sections: [...s.sections, { id, layers: [], main: { ...s.main }, layout: s.layouts[s.kind] }] })
-    this.switchSection(id)
-  }
-
-  /** The switch itself, at audio time `at`: save the current section, load the next, re-anchor the loop. */
-  private applySection(id: string, at: number) {
-    const s = this.store.get()
-    const target = s.sections.find((x) => x.id === id)
-    if (!target) return
-    if (this.recorder) { this.closeLayer(at); this.recorder = null }
-    const current: Section<MainState, LayoutMode> = { id: s.section, layers: this.store.get().loopLayers, main: s.main, layout: s.layouts[s.kind] }
-    const layout = target.layout ?? s.layouts[s.kind]
-    this.store.set({
-      sections: [...s.sections.filter((x) => x.id !== id), current].sort((a, b) => a.id.localeCompare(b.id)),
-      section: id, queued: null, loopLayers: target.layers, redoLayers: [], main: target.main,
-      layouts: { ...s.layouts, [s.kind]: layout },
-    })
-    if (s.looping) {
-      this.loopT0 = at // the new section's loops start from their first bar
-      this.scheduledTo = at
-      if (s.loopRec) { this.recPass = 0; this.recorder = new LayerRecorder(at, this.store.get().transport) }
+  /** A pass ends: its notes join the cell (overdub), and the next pass starts unless the scene changed. */
+  private closeBoardPass(t: number, last: boolean) {
+    const r = this.boardRec
+    if (!r) return
+    const notes = r.rec.finish(t)
+    if (notes.length) {
+      const have = this.songTracks().find((x) => x.id === r.track)?.cells[r.scene]
+      this.setCell(r.track, r.scene, have ? { ...have, notes: [...have.notes, ...notes].sort((a, b) => a.at - b.at) } : { id: uid('c'), start: 0, len: r.len, loop: r.len, notes })
     }
-    this.performer?.play({ type: 'layout', mode: layout, section: id }, at) // a cue the take keeps for the export
-    if (target.main.clipId !== s.main.clipId || target.main.place !== s.main.place) {
-      if (target.main.clipId && (s.looping || s.main.clipId)) this.startMain(target.main.clipId, at, true)
-      else if (!target.main.clipId) this.stopMain(at)
+    if (last) { this.boardRec = null; return }
+    const spb = this.spb(), origin = this.songT0 + this.sceneOrigin * spb, tr = this.store.get().transport
+    this.boardRec = { ...r, rec: new LayerRecorder(origin, { ...tr, bars: r.len / tr.beats }), pass: Math.floor(((t - origin) / spb) / r.len + 1e-6) }
+  }
+  private closeRecording(t: number) {
+    if (this.boardRec) this.closeBoardPass(t, true)
+    if (this.tlRec) {
+      const c = this.tlRec.rec.finish(t), id = this.tlRec.track
+      this.tlRec = null
+      if (c) this.store.set((s) => ({ tracks: s.tracks.map((x) => (x.id !== id ? x : { ...x, clips: [...x.clips.filter((o) => o.start < c.start || o.start + o.len > c.start + c.len), c].sort((a, b) => a.start - b.start) })) }))
     }
+  }
+
+  /** A video on a video or backing track: on the timeline at the playhead, and in the board's scene if its cell is empty. */
+  private placeMedia(clip: Clip, track: Track, at: number) {
+    const s = this.store.get(), spb = this.spb()
+    const len = Math.max(s.transport.beats, Math.ceil(clip.duration / spb / s.transport.beats - 1e-9) * s.transport.beats)
+    const exact = clip.duration / spb
+    let sc: SongClip
+    if (track.kind === 'backing') sc = { id: uid('c'), start: at, len, loop: len, notes: [], media: { clipId: clip.id, offset: 0 } }
+    else {
+      const home = homeKey({ ...track.inst.clip, clipId: clip.id }, clip)
+      sc = { id: uid('c'), start: at, len, loop: len, notes: [{ at: 0, len: exact, note: home, vel: 100 }] }
+    }
+    const scene = s.sceneOn ?? s.scenes[0]?.id
+    this.store.set((x) => ({ tracks: x.tracks.map((t) => {
+      if (t.id !== track.id) return t
+      const cells = scene && !t.cells[scene] ? { ...t.cells, [scene]: { ...sc, id: uid('c'), start: 0 } } : t.cells
+      return { ...t, cells, clips: [...t.clips.filter((o) => o.start + o.len <= at || o.start >= at + len), sc].sort((a, b) => a.start - b.start) }
+    }) }))
+  }
+
+  /** The song's beat at audio time t (negative during a count-in). */
+  beatAt(t: number) { return (t - this.songT0) / this.spb() }
+
+  /**
+   * A take filmed along the song (the Jacob Collier split-screen, ADR 0773): it lands on its own video
+   * track at the beat the camera started, the count-in trimmed off the front. Each take its own tile.
+   */
+  async addRecording(file: File, startBeat: number) {
+    let t = this.selected()
+    if (!t || t.kind !== 'video' || t.inst.clip.clipId) t = this.addTrack('video')
+    const pre = Math.max(0, -startBeat) * this.spb()
+    await this.importFiles([file], { track: t.id, at: Math.max(0, startBeat) })
+    const id = this.store.get().clip.clipId, clip = id ? this.clips.get(id) : undefined
+    if (clip && pre > 0) this.setClip({ start: Math.min(0.9, pre / clip.duration) })
+  }
+
+  /** A picture cue (layout or look) on a picture track at the playhead. */
+  addCue(track: string, cue: { layout?: LayoutMode; look?: string }, at = this.store.get().pos) {
+    const b = this.store.get().transport.beats
+    const start = Math.floor(at / b) * b
+    this.store.set((s) => ({ tracks: s.tracks.map((t) => (t.id !== track ? t : { ...t, clips: [...t.clips.filter((c) => c.start !== start), { id: uid('c'), start, len: b, loop: b, notes: [], cue }].sort((a, c) => a.start - c.start) })) }))
+  }
+
+  /** The timeline as one MP4: every track through its own instrument, the stage laid out by track. */
+  async exportSong(opts: ExportOptions) {
+    const s = this.store.get()
+    const song = compileSong(this.songTracks(), s.transport)
+    if (!song.events.length) { this.say('The timeline is empty: put a scene on it, or record into it, first.'); return }
+    await this.export(opts, { name: 'Song', events: song.events, duration: song.duration })
   }
 
   // ---------- pads: note repeat, 16 Levels, multi-drop, swap and layer ---------------------------
@@ -700,7 +902,7 @@ export class App {
   /** Note repeat: while a pad is held it retriggers on the grid (the loop's, if it runs), with swing. */
   private startRepeat(key: number, notes: number[], vel: number) {
     const s = this.store.get(), step = (s.padPlay.rate * 60) / s.transport.bpm, now = this.ctx.currentTime
-    const first = s.looping ? this.loopT0 + Math.ceil((now + 0.01 - this.loopT0) / step) * step : now + step
+    const first = s.songOn ? this.songT0 + Math.ceil((now + 0.01 - this.songT0) / step) * step : now + step
     this.repeaters.set(key, { notes, vel, next: first, k: 1 })
     if (!this.repeatTimer) this.repeatTimer = window.setInterval(() => this.repeatTick(), 10)
   }
@@ -714,7 +916,7 @@ export class App {
         for (const n of r.notes) {
           this.performer!.play({ type: 'on', note: n, vel: r.vel, src: 50 }, r.next)
           this.performer!.play({ type: 'off', note: n, src: 50 }, r.next + len)
-          this.recorder?.on(n, r.vel, r.next); this.recorder?.off(n, r.next + len)
+          if (this.recording()) { this.recOn(n, r.vel, r.next); this.recOff(n, r.next + len) }
         }
         r.next += step * (r.k % 2 ? 1 + s.padPlay.swing : 1 - s.padPlay.swing) // swing pushes every second hit late
         r.k++
@@ -754,10 +956,11 @@ export class App {
     const events = [...got.events]
     if (this.mainOn) { // the bed was playing: the take starts it where it was at the phrase's start
       const clip = this.clips.get(this.mainOn.clipId)
-      if (clip) events.unshift({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.store.get().main.gain, offset: (got.start - this.mainOn.at) % clip.duration, place: this.store.get().main.place } })
+      if (clip) events.unshift({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.mainOn.gain, offset: (got.start - this.mainOn.at) % clip.duration, place: 'behind' } })
     }
     const s = this.store.get()
-    this.addTake({ name: `Capture ${new Date().toLocaleTimeString()}`, events, duration: takeDuration(events), hold: s.looping ? loopSeconds(s.transport) : undefined })
+    this.addTake({ name: `Capture ${new Date().toLocaleTimeString()}`, events, duration: takeDuration(events) })
+    void s
     this.say(`Captured ${events.filter((e) => e.ev.type === 'on').length} notes as a take.`)
   }
 
@@ -774,24 +977,22 @@ export class App {
       const first = events.some((e) => e.ev.type === 'main' || e.ev.type === 'layout') ? 0 : events.find((e) => e.ev.type === 'on')?.t ?? 0
       const shifted = events.map((e) => ({ t: Math.max(0, e.t - first), ev: e.ev }))
       this.rec = null
-      const hold = this.store.get().looping ? loopSeconds(this.store.get().transport) : undefined
-      if (shifted.length) this.addTake({ name: `Take ${new Date().toLocaleTimeString()}`, events: shifted, duration: takeDuration(shifted), hold })
+      if (shifted.length) this.addTake({ name: `Take ${new Date().toLocaleTimeString()}`, events: shifted, duration: takeDuration(shifted) })
       this.store.set({ recording: false })
     } else {
       this.stopTake()
       this.rec = { start: this.ctx.currentTime, events: [] }
       if (this.mainOn) { // the bed is already playing: the take starts it where it is now
         const clip = this.clips.get(this.mainOn.clipId)
-        if (clip) this.rec.events.push({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.store.get().main.gain, offset: (this.ctx.currentTime - this.mainOn.at) % clip.duration, place: this.store.get().main.place } })
+        if (clip) this.rec.events.push({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.mainOn.gain, offset: (this.ctx.currentTime - this.mainOn.at) % clip.duration, place: 'behind' } })
       }
-      if (this.store.get().sections.length) this.rec.events.push({ t: 0, ev: { type: 'layout', mode: this.store.get().layouts[this.store.get().kind], section: this.store.get().section } })
       this.store.set({ recording: true })
     }
   }
 
   playTake() {
     const take = this.store.get().take
-    if (!take || !this.performer) return
+    if (!take || !this.base) return
     this.stopTake()
     void this.ctx.resume()
     this.replaying = true
@@ -800,7 +1001,7 @@ export class App {
     this.store.set({ playing: true })
     this.playTimer = window.setInterval(() => {
       const horizon = this.ctx.currentTime + 0.12
-      while (i < take.events.length && start + take.events[i].t <= horizon) { this.performer!.play(take.events[i].ev, start + take.events[i].t); i++ }
+      while (i < take.events.length && start + take.events[i].t <= horizon) { this.route(take.events[i].ev).play(take.events[i].ev, start + take.events[i].t); i++ }
       if (i >= take.events.length && this.ctx.currentTime > start + take.duration + 1) this.stopTake()
     }, 25)
   }
@@ -809,7 +1010,8 @@ export class App {
     if (!this.replaying) return
     clearInterval(this.playTimer)
     this.replaying = false
-    this.performer?.panic(this.ctx.currentTime)
+    this.panic()
+    this.route({ type: 'main', clipId: null, gain: 0 }).play({ type: 'main', clipId: null, gain: 0 }, this.ctx.currentTime)
     this.store.set({ playing: false })
   }
 
@@ -826,22 +1028,28 @@ export class App {
     if (take) download(new Blob([takeToMidi(take) as BlobPart], { type: 'audio/midi' }), `${take.name}.mid`)
   }
 
-  async export(opts: ExportOptions) {
+  /** A take (or the song, compiled) as an MP4: every note on its own track's instrument. */
+  async export(opts: ExportOptions, what?: Take) {
     const s = this.store.get()
-    if (!s.take || !this.stage || s.exporting) return
+    const take = what ?? s.take
+    if (!take || !this.stage || s.exporting) return
     this.stopTake()
+    this.songStop()
     this.store.set({ exporting: { progress: 0, stage: 'Sound' } })
     try {
-      const blob = await exportTake(s.take, {
+      const tracks = this.songTracks().filter((t) => t.kind === 'instrument' || t.kind === 'video')
+        .map((t) => ({ id: t.id, state: { ...t.inst, bendRange: s.bendRange }, mix: this.mixOf(t.id), mode: !what ? opts.layout : t.kind === 'video' ? 'gallery' as const : s.layouts[t.inst.kind] }))
+      const blob = await exportTake(take, {
         state: this.instrumentState(), clips: this.clips, levels: this.levels, stage: this.stage,
         homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(), fit: s.fit,
-        fx: s.fx, bpm: s.transport.bpm, look: s.look,
+        fx: s.fx, bpm: s.transport.bpm, look: s.look, tracks, trackMode: opts.layout,
       }, opts, (progress, stage) => this.store.set({ exporting: { progress, stage } }))
-      download(blob, `${s.take.name} ${opts.aspect.replace(':', 'x')}.mp4`)
+      download(blob, `${take.name} ${opts.aspect.replace(':', 'x')}.mp4`)
     } catch (e) {
       this.say(`Export failed: ${(e as Error).message}`)
     } finally {
       this.stage.layout.reset()
+      this.stage.inner.clear()
       this.store.set({ exporting: null })
     }
   }

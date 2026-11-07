@@ -77,8 +77,9 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
   const sheet = useStore(ui, (u) => u.sheet)
   const safe = useStore(ui, (u) => u.safe)
   const coach = useStore(ui, (u) => u.coach)
+  const big = useStore(ui, (u) => u.big)
   const kind = useStore(app.store, (s) => s.kind)
-  const quiet = useStore(app.store, (s) => s.voices === 0 && !s.looping && !s.playing)
+  const quiet = useStore(app.store, (s) => s.voices === 0 && !s.songOn && !s.playing)
   // an idle stage shows what is loaded, dimmed, so the instrument looks on before the first note
   const idle = useStore(app.store, (s) => s.clips.find((c) => c.id === (s.kind === 'pads' ? s.pads.chains.find((x) => x.note === s.pads.selected)?.clipId : s.kind === 'layers' ? s.layers.chains[0]?.clipId : s.clip.clipId))?.thumb)
   const [over, setOver] = useState(false)
@@ -144,6 +145,7 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
       </div>
       <input ref={file} type="file" accept="video/*,.mid,.midi,.vsamp" multiple hidden onChange={(e) => { files(e.target.files); e.target.value = '' }} />
       {hasClips && <button type="button" className="btn add" onClick={() => file.current?.click()} title="Add a video, a .mid or a project file">+ Add</button>}
+      <button type="button" className="btn sm stagetoggle" aria-pressed={big} onClick={() => ui.set({ big: !big })} title={big ? 'Show the song beside the stage' : 'The stage alone, as big as it goes'}>{big ? 'Show the song' : 'Stage only'}</button>
       {over && <div className="drop-hint">Drop to load</div>}
       {importing && (
         <output className="progress">

@@ -3,11 +3,11 @@
 import { createStore } from '../engine/store'
 import type { InstrumentKind } from '../engine/types'
 
-export type DeckMode = 'play' | 'shape' | 'loop' | 'post'
+export type DeckMode = 'play' | 'shape' | 'mix' | 'post'
 export const MODES: [DeckMode, string, string][] = [
   ['play', 'Play', 'keys, pads'],
   ['shape', 'Shape', 'sound, picture'],
-  ['loop', 'Loop', 'layers, sections'],
+  ['mix', 'Mix', 'tracks, faders'],
   ['post', 'Post', 'look, export'],
 ]
 
@@ -27,13 +27,18 @@ export interface UiState {
   hud: Hud | null
   coach: boolean // the first-visit hint on the stage
   safe: boolean // POST: show where the apps put their buttons over a 9:16 frame
+  pick: Pick | null // the clip selected on the board or the timeline (SHAPE edits its notes)
+  ppb: number // the timeline's zoom: pixels a beat
+  big: boolean // the stage takes the song view's room
 }
+/** A selected clip: a board cell (track × scene) or a timeline clip (track, clip id). */
+export type Pick = { track: string; scene: string; clip?: undefined } | { track: string; clip: string; scene?: undefined }
 
 const remembered = (): DeckMode => {
-  try { const m = localStorage.getItem('vs.mode'); return m === 'shape' || m === 'loop' || m === 'post' ? m : 'play' } catch { return 'play' }
+  try { const m = localStorage.getItem('vs.mode'); return m === 'shape' || m === 'mix' || m === 'post' ? m : 'play' } catch { return 'play' }
 }
 
-export const ui = createStore<UiState>({ mode: remembered(), page: {}, sheet: false, layer: null, hud: null, coach: true, safe: true })
+export const ui = createStore<UiState>({ mode: remembered(), page: {}, sheet: false, layer: null, hud: null, coach: true, safe: true, pick: null, ppb: 22, big: false })
 
 export function setMode(mode: DeckMode) {
   ui.set({ mode, sheet: false })

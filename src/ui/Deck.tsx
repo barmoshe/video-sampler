@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { useStore } from '../engine/store'
 import { DeckKnobs } from './Knobs'
-import { LoopMode } from './LoopMode'
+import { MixMode } from './MixMode'
+import { PianoRoll } from './PianoRoll'
 import { PlayMode } from './PlayMode'
 import { PostMode } from './PostMode'
 import { ShapeMode } from './ShapeMode'
@@ -11,8 +12,9 @@ import { MODES, setMode, ui } from './ui'
  * The deck under the stage (ADR 0772): four mode keys, what the mode plays or edits, and eight knobs
  * that follow the selection. Option+1-4 switch modes from the keyboard.
  */
-export function Deck({ onLibrary, onCamera, onExport }: { onLibrary: () => void; onCamera: () => void; onExport: () => void }) {
+export function Deck({ onLibrary, onCamera, onExport }: { onLibrary: () => void; onCamera: () => void; onExport: (song: boolean) => void }) {
   const mode = useStore(ui, (u) => u.mode)
+  const pick = useStore(ui, (u) => u.pick)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (!e.altKey || e.metaKey || e.ctrlKey) return
@@ -33,8 +35,8 @@ export function Deck({ onLibrary, onCamera, onExport }: { onLibrary: () => void;
       </nav>
       <div className="deck-body">
         {mode === 'play' && <PlayMode onLibrary={onLibrary} onCamera={onCamera} />}
-        {mode === 'shape' && <ShapeMode />}
-        {mode === 'loop' && <LoopMode />}
+        {mode === 'shape' && (pick ? <div className="mode-body shape"><PianoRoll pick={pick} /></div> : <ShapeMode />)}
+        {mode === 'mix' && <MixMode />}
         {mode === 'post' && <PostMode onExport={onExport} />}
       </div>
       <DeckKnobs />

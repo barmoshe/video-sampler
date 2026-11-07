@@ -8,7 +8,7 @@ import { filterTwin, opacity } from './voice-math'
 
 export interface DrawOptions {
   mode: LayoutMode
-  homeCells?: { key: string; order: number; clipId: string | null }[] // Pads: the visible bank
+  homeCells?: { key: string; order: number; clipId: string | null; track?: string }[] // Pads: the visible bank
   homeBase?: number // the bank's first note (Home grid order = note − homeBase, 0..15)
   background?: [number, number, number]
   maxTaps?: number
@@ -19,6 +19,10 @@ export interface DrawOptions {
   section?: string // the current section: other sections' layer tiles are not held
   echo?: { time: number; feedback: number; level: number; decay: number; reverb: number } // the returns' picture twins: delay s, feedback, delay level, reverb decay s, reverb level
   mainAlpha?: number // the main video behind the tiles (ADR 0771)
+  /** A song's tracks (ADR 0773): the stage is laid out by track first (`trackMode`), each track's notes inside its region (its own `mode`). */
+  tracks?: { id: string; order: number; mode: LayoutMode }[]
+  trackMode?: LayoutMode
+  holdTracks?: number // seconds a track keeps its last frame between notes (the song's length while it plays)
 }
 
 /** How tiles are framed (production.md §3 A). Sizes are fractions of the stage's short side. */
@@ -46,6 +50,7 @@ export class Stage {
   readonly cache: FrameCache
   readonly collage: Collage
   layout = new LayoutEngine()
+  inner = new Map<string, LayoutEngine>() // one per track, for its notes inside its region
   private lastT = 0
   private held = new Map<string, { clipId: string; q: number; seen: number; order: number }>() // looper layer tiles
 
@@ -71,7 +76,7 @@ export class Stage {
     type Piece = { v: Voice; clip: Clip; q: number; W: number; alpha: number; k?: number } // k: an echo k delay times back
     const halos: { v: Voice; clip: Clip; q: number; alpha: number }[] = []
     const fx = o.echo
-    const cells = new Map<string, { order: number; weight: number; born: number; pieces: Piece[] }>()
+    const cells = new Map<string, { order: number; weight: number; born: number; pieces: Piece[]; track?: string }>()
     const mains: Piece[] = []
     if (this.held.size && [...this.held.values()].some((h) => h.seen > t + 1)) this.held.clear() // time went back (an export)
     for (const v of voices) {
@@ -88,9 +93,10 @@ export class Stage {
         if (qm !== null) mains.push({ v, clip, q: qm * clip.fps, W: 0.5 * (clip.fps / dispFps), alpha: shown(opacity(env)) })
         continue
       }
-      const order = v.cell.startsWith('L:') ? 1000 + Number(v.cell.split(':').at(-1)) : o.mode === 'home' ? Number(v.cell.split(':')[1]) - (o.homeBase ?? 36) : v.note
-      if (o.mode === 'home' && (order < 0 || order > 15)) continue // another bank
-      const c = cells.get(v.cell) ?? { order, weight: 0, born: v.on, pieces: [] }
+      const home = o.tracks ? o.tracks.find((x) => x.id === v.track)?.mode === 'home' : o.mode === 'home'
+      const order = v.cell.startsWith('L:') ? 1000 + Number(v.cell.split(':').at(-1)) : home ? Number.parseInt(v.cell.split(':')[1] ?? '', 10) - (o.homeBase ?? 36) : v.note
+      if (home && (order < 0 || order > 15)) continue // another bank
+      const c = cells.get(v.cell) ?? { order, weight: 0, born: v.on, pieces: [], track: v.track }
       const live = t < v.dead ? positionAt(v, t, clip.duration) : null
       const alpha = live === null ? 0 : shown(opacity(gainAt(v, t)))
       if (live !== null && alpha > 0.002) {
@@ -116,11 +122,26 @@ export class Stage {
       }
       if (c.pieces.length || halos.some((h) => h.v === v)) cells.set(v.cell, c)
     }
-    if (o.mode === 'home' && o.homeCells) for (const h of o.homeCells) if (h.clipId && !cells.has(h.key)) cells.set(h.key, { order: h.order, weight: 0, born: 0, pieces: [] })
+    if ((o.mode === 'home' || o.tracks) && o.homeCells) for (const h of o.homeCells) if (h.clipId && !cells.has(h.key)) cells.set(h.key, { order: h.order, weight: 0, born: 0, pieces: [], track: h.track })
+    // a song's tracks keep their tile between notes, showing the last frame, while the song plays
+    if (o.tracks) {
+      for (const tr of o.tracks) {
+        let last: Piece | undefined
+        for (const c of cells.values()) if (c.track === tr.id) for (const p of c.pieces) if (!p.k && (!last || p.v.on > last.v.on)) last = p
+        if (last) this.held.set(`T:${tr.id}`, { clipId: last.clip.id, q: last.q, seen: t, order: tr.order })
+      }
+      for (const [key, h] of this.held) {
+        if (!key.startsWith('T:')) continue
+        const id = key.slice(2)
+        if (t - h.seen > (o.holdTracks ?? 0) || !o.tracks.some((x) => x.id === id)) { this.held.delete(key); continue }
+        if (![...cells.values()].some((c) => c.track === id && c.pieces.length)) cells.set(key, { order: 0, weight: 0.3, born: 0, pieces: [], track: id })
+      }
+    }
     // looper layers keep their tile between notes, showing the last frame, for one loop length
     for (const [key, c] of cells) { const p0 = c.pieces.find((p) => !p.k); if (key.startsWith('L:') && p0) this.held.set(key, { clipId: p0.clip.id, q: p0.q, seen: t, order: c.order }) }
     const hold = o.hold ?? 0
     for (const [key, h] of this.held) {
+      if (!key.startsWith('L:')) continue
       if (t - h.seen > hold || (o.section && !key.startsWith(`L:${o.section}:`))) { this.held.delete(key); continue }
       if (!cells.has(key)) cells.set(key, { order: h.order, weight: 0.001, born: 0, pieces: [] })
     }
@@ -132,8 +153,37 @@ export class Stage {
     const side = place === 'side'
     const inner = place === 'behind' && o.mode !== 'stack' ? 0.64 : 1
     const IW = side ? W / 2 : W * inner, IH = side ? H : H * inner, ox = side ? W / 2 : (W - IW) / 2, oy = side ? 0 : (H - IH) / 2
-    const raw = this.layout.update(o.mode, cellList, IW, IH, firstAspect, now, dt || 1 / dispFps)
-    const rects = ox === 0 && oy === 0 ? raw : new Map([...raw].map(([k, r]) => [k, { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h }]))
+    let rects: Map<string, { x: number; y: number; w: number; h: number }>
+    if (o.tracks) {
+      // tracks first: each track one region of the stage; then each track's notes inside its region
+      const byTrack = new Map<string, CellIn[]>()
+      for (const [key, c] of cells) {
+        const id = c.track ?? '_'
+        const list = byTrack.get(id) ?? []
+        list.push({ key, order: c.order, weight: c.weight, born: c.born })
+        byTrack.set(id, list)
+      }
+      const info = new Map(o.tracks.map((x) => [x.id, x]))
+      const outerCells: CellIn[] = [...byTrack].map(([id, list]) => ({ key: `T:${id}`, order: info.get(id)?.order ?? 99, weight: Math.max(...list.map((c) => c.weight)), born: Math.max(...list.map((c) => c.born)) }))
+      // a split screen: up to three tracks side by side on a landscape frame, stacked on a portrait one
+      const nT = Math.max(1, outerCells.length), fa = IW / Math.max(1, IH)
+      const outerAspect = nT <= 3 ? (fa >= 1 ? fa / nT : fa * nT) : firstAspect
+      const outer = this.layout.update(o.trackMode ?? 'gallery', outerCells, IW, IH, outerAspect, now, dt || 1 / dispFps)
+      rects = new Map()
+      for (const [id, list] of byTrack) {
+        const r = outer.get(`T:${id}`)
+        if (!r) continue
+        let eng = this.inner.get(id)
+        if (!eng) { eng = new LayoutEngine(); this.inner.set(id, eng) }
+        // one note fills its track's region; a chord shares it
+        const inner = eng.update(info.get(id)?.mode ?? o.mode, list, r.w, r.h, list.length === 1 ? r.w / Math.max(1, r.h) : firstAspect, now, dt || 1 / dispFps)
+        for (const [k, ir] of inner) rects.set(k, { x: ir.x + r.x + ox, y: ir.y + r.y + oy, w: ir.w, h: ir.h })
+      }
+      for (const id of this.inner.keys()) if (!info.has(id)) this.inner.delete(id)
+    } else {
+      const raw = this.layout.update(o.mode, cellList, IW, IH, firstAspect, now, dt || 1 / dispFps)
+      rects = ox === 0 && oy === 0 ? raw : new Map([...raw].map(([k, r]) => [k, { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h }]))
+    }
 
     const look = o.look ?? CLEAN_LOOK, short = Math.min(W, H)
     const framed = o.mode !== 'stack'
@@ -155,7 +205,7 @@ export class Stage {
     const groups = new Map<TexArray, Tile[]>()
     const push = (arr: TexArray, tile: Tile) => { const g = groups.get(arr) ?? []; g.push(tile); groups.set(arr, g) }
     // idle Home-grid pads: their poster frame, dimmed
-    if (o.mode === 'home' && o.homeCells) for (const h of o.homeCells) {
+    if ((o.mode === 'home' || o.tracks) && o.homeCells) for (const h of o.homeCells) {
       const c = cells.get(h.key), r = rects.get(h.key)
       if (!r || !h.clipId || (c && c.pieces.length)) continue
       const cf = this.cache.clips.get(h.clipId)

@@ -14,6 +14,9 @@ export function CameraDialog({ onClose }: { onClose: () => void }) {
   const [left, setLeft] = useState<number | null>(null)
   const kind = useStore(app.store, (s) => s.kind)
   const pad = useStore(app.store, (s) => s.pads.selected)
+  const videoTrack = useStore(app.store, (s) => s.tracks.find((t) => t.id === s.sel)?.kind === 'video')
+  const [as, setAs] = useState<'sample' | 'take'>(videoTrack ? 'take' : 'sample')
+  const take = useRef<{ rec: MediaRecorder; beat: number } | null>(null)
 
   useEffect(() => {
     let s: MediaStream | null = null
@@ -23,9 +26,32 @@ export function CameraDialog({ onClose }: { onClose: () => void }) {
     return () => s?.getTracks().forEach((t) => t.stop())
   }, [])
 
+  const mime = () => ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
+  /** A take along the song: the timeline plays with a count-in while the camera films, until Stop. */
+  const recordTake = () => {
+    if (!stream) return
+    if (take.current) { take.current.rec.stop(); app.songStop(); return }
+    const type = mime()
+    const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined)
+    const parts: Blob[] = []
+    rec.ondataavailable = (e) => parts.push(e.data)
+    rec.onstop = () => {
+      const file = new File(parts, `Take ${new Date().toLocaleTimeString()}.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type: type.split(';')[0] || 'video/webm' })
+      const beat = take.current?.beat ?? 0
+      take.current = null
+      onClose()
+      void app.addRecording(file, beat)
+    }
+    app.store.set({ view: 'timeline' })
+    app.songStart('timeline', true)
+    rec.start()
+    take.current = { rec, beat: app.beatAt(app.ctx.currentTime) }
+    setLeft(-1)
+  }
+
   const record = () => {
     if (!stream) return
-    const type = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
+    const type = mime()
     const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined)
     const parts: Blob[] = []
     rec.ondataavailable = (e) => parts.push(e.data)
@@ -48,12 +74,17 @@ export function CameraDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       footer={<>
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn rec" aria-pressed={left !== null} disabled={!stream || left !== null} onClick={record}><span className="dot" /> {left !== null ? `Recording… ${left}` : `Record ${seconds} s`}</button>
+        {as === 'take'
+          ? <button type="button" className="btn rec" aria-pressed={left !== null} disabled={!stream} onClick={recordTake}><span className="dot" /> {left !== null ? 'Stop the take' : 'Record a take along the song'}</button>
+          : <button type="button" className="btn rec" aria-pressed={left !== null} disabled={!stream || left !== null} onClick={record}><span className="dot" /> {left !== null ? `Recording… ${left}` : `Record ${seconds} s`}</button>}
       </>}
     >
       {error ? <p role="alert">{error}</p> : <video ref={video} autoPlay muted playsInline />}
-      <Seg label="Length" value={seconds} options={[['2', '2 s'], ['3', '3 s'], ['5', '5 s']]} onChange={setSeconds} />
-      <p className="muted" style={{ margin: 0 }}>Sing a note, hit something, say a word. It goes onto {where}, tuned to its own pitch. Nothing leaves this computer.</p>
+      <Seg<'sample' | 'take'> label="Record" value={as} options={[['take', 'A take along the song'], ['sample', 'A short sample']]} onChange={setAs} />
+      {as === 'sample' && <Seg label="Length" value={seconds} options={[['2', '2 s'], ['3', '3 s'], ['5', '5 s']]} onChange={setSeconds} />}
+      <p className="muted" style={{ margin: 0 }}>{as === 'take'
+        ? 'The song plays from the playhead after a bar of clicks; play or sing along on headphones, then Stop. The take lands on its own video track at the bar you started, in its own tile. Nothing leaves this computer.'
+        : `Sing a note, hit something, say a word. It goes onto ${where}, tuned to its own pitch. Nothing leaves this computer.`}</p>
     </Dialog>
   )
 }

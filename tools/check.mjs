@@ -107,7 +107,7 @@ try {
   })
   await step('pads: an empty kit fills itself with the pack\'s drums', async () => {
     await click('.instruments button:nth-child(3)') // Pads (the legend is the first child)
-    await until('window.__vs.store.get().pads.chains.filter((c) => c.clipId).length >= 15', 90000)
+    await until('window.__vs.store.get().pads.chains.filter((c) => c.clipId).length >= 15', 300000) // fifteen imports: slow on a loaded machine
     const n = await S('s.pads.chains.filter((c) => c.clipId).length')
     await evaluate('window.__vs.handlers.noteOn(36, 110, performance.now(), "keys"); window.__vs.handlers.noteOn(38, 100, performance.now(), "keys")')
     await sleep(300)
@@ -139,6 +139,8 @@ try {
     if (!ok || !after.startsWith('lp') || !hud.includes('Cutoff')) throw new Error(`before ${before}, after ${after}, hud "${hud}"`)
     return `filter ${before} → ${after}; the stage showed "${hud}"`
   })
+  await until('!window.__vs.store.get().importing', 300000).catch(() => {}) // the kit's last import, before the clips go
+  await sleep(500)
   await clearClips()
   await evaluate("window.__vs.setPads({ chains: [] })")
 
@@ -346,45 +348,44 @@ try {
     await key('KeyA', 'keyUp')
     return `selector 0: layer gains ${g0}; selector 127: ${g1}`
   })
-  await step('looper: record a layer, it loops as its own tile; a main video plays behind', async () => {
+  await step('the song: a board cell recorded live, a second track, each track its own tile', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id })")
     await evaluate('window.__vs.setTransport({ bpm: 120, bars: 1, countIn: false, metronome: false, quantize: 4 })')
-    await evaluate('window.__vs.loopRecord()')
+    const t1 = await S('s.sel')
+    await evaluate("window.__vs.store.set({ view: 'board' }); window.__vs.launchScene('A'); window.__vs.songRecord()")
     for (const k of ['KeyA', 'KeyD', 'KeyG']) { await key(k, 'keyDown'); await sleep(180); await key(k, 'keyUp'); await sleep(250) }
-    await sleep(2300) // the 2 s pass closes into layer 1
-    await evaluate('window.__vs.loopRecord()') // stop recording; the layer keeps looping
-    const layers = await S('s.loopLayers.length'), notes = await S('s.loopLayers[0]?.notes.length ?? 0')
-    await evaluate("window.__vs.setMain({ clipId: window.__vs.store.get().clips[1].id, gain: 0.3 })")
-    await sleep(900)
-    const cells = await evaluate("[...new Set(window.__vs.performer.book.sounding(window.__vs.ctx.currentTime).map((v) => v.cell))].join(' ')")
-    await shot('08-looper-main.png')
-    await evaluate('window.__vs.toggleRecord()'); await sleep(2200); await evaluate('window.__vs.toggleRecord()')
-    const take = await S('`${s.take.events.length} events, main ${s.take.events.some((e) => e.ev.type === "main")}, hold ${s.take.hold}`')
-    // sections: B starts on the next bar with its own (empty) layers and a main video beside the tiles
-    await evaluate('window.__vs.addSection()')
-    await sleep(2300)
-    const inB = await S('`${s.section} layers ${s.loopLayers.length}, others ${s.sections.map((x) => x.id + ":" + x.layers.length).join(",")}`')
-    await evaluate("window.__vs.setMain({ clipId: window.__vs.store.get().clips[0].id, place: 'side' })")
-    await sleep(600)
-    await shot('08b-section-b-side.png')
-    await evaluate("window.__vs.switchSection('A')")
-    await sleep(2300)
-    const backA = await S('`${s.section} layers ${s.loopLayers.length}`')
-    await evaluate('window.__vs.loopStop(); window.__vs.setMain({ clipId: null })')
-    if (inB !== 'B layers 0, others A:1' || backA !== 'A layers 1') throw new Error(`sections: ${inB}; ${backA}`)
-    if (layers !== 1 || notes !== 3 || !/L:A:1/.test(cells) || !/main/.test(cells)) throw new Error(`layers ${layers}, notes ${notes}, cells ${cells}`)
-    return `1 layer of ${notes} notes; cells: ${cells}; take: ${take}; sections: ${inB} then ${backA}`
+    await sleep(2300) // the 2 s pass closes into the cell
+    await evaluate('window.__vs.songRecord()') // stop recording; the cell keeps looping
+    const notes = await S(`s.tracks.find((t) => t.id === '${t1}').cells.A?.notes.length ?? 0`)
+    // a second instrument track on another clip, its cell written directly
+    await evaluate(`(() => { const a = window.__vs; const t = a.addTrack('instrument'); a.setClip({ clipId: a.store.get().clips[1].id }); a.setCell(t.id, 'A', { id: 'x', start: 0, len: 4, loop: 4, notes: [{ at: 0, len: 1, note: 60, vel: 100 }, { at: 2, len: 1, note: 64, vel: 100 }] }) })()`)
+    const t0 = await evaluate('window.__vs.ctx.currentTime')
+    await sleep(2400)
+    const tracks = await evaluate(`new Set(window.__vs.book.voices.filter((v) => v.on > ${t0}).map((v) => v.track)).size`)
+    const tiles = await evaluate(`[...window.__vs.stage.inner.keys()].length`)
+    await shot('08-board.png')
+    if (notes < 3 || tracks < 2) throw new Error(`cell notes ${notes}, tracks sounding ${tracks}, track regions ${tiles}`)
+    return `cell A of track 1: ${notes} notes; ${tracks} tracks sounding in scene A, ${tiles} track regions on stage`
   })
-  await step('export the loop take with its main video (16:9, gallery)', async () => {
+  await step('the timeline: scene A placed twice, played from bar 1, then exported as one song', async () => {
+    await evaluate("window.__vs.songStop(); window.__vs.placeScene('A'); window.__vs.placeScene('A'); window.__vs.store.set({ view: 'timeline' }); window.__vs.setPos(0)")
+    const placed = await S('`${s.tracks.map((t) => t.clips.length).join(",")} clips, ${s.marks.length} marks, ${s.marks.map((m) => m.at).join("/")}`')
+    const t0 = await evaluate('window.__vs.ctx.currentTime')
+    await evaluate("window.__vs.songStart('timeline')")
+    await sleep(1600)
+    await shot('08b-timeline.png')
+    const tracks = await evaluate(`new Set(window.__vs.book.voices.filter((v) => v.on > ${t0}).map((v) => v.track)).size`)
+    await evaluate('window.__vs.songStop()')
     for (const f of readdirSync(OUT).filter((x) => x.endsWith('.mp4'))) rmSync(join(OUT, f))
-    await evaluate("window.__vs.export({ aspect: '16:9', layout: 'gallery', height: 720, fps: 30 })")
+    await evaluate("window.__vs.exportSong({ aspect: '16:9', layout: 'gallery', height: 720, fps: 30 })")
     await sleep(500)
     await until('!window.__vs.store.get().exporting', 180000)
     const f = readdirSync(OUT).find((x) => x.endsWith('.mp4'))
     if (!f) throw new Error('no MP4 downloaded: ' + (await S('s.message')))
-    execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', '1.2', '-i', join(OUT, f), '-frames:v', '1', join(OUT, '09-loop-export-frame.png')])
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', '1.2', '-i', join(OUT, f), '-frames:v', '1', join(OUT, '09-song-export-frame.png')])
     const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', join(OUT, f)]).toString().trim()
-    return `${f}: ${Number(probe).toFixed(2)} s`
+    if (!placed.startsWith('2,2 clips, 2 marks') || tracks < 2) throw new Error(`${placed}; ${tracks} tracks sounding`)
+    return `${placed}; ${tracks} tracks sounding; ${f}: ${Number(probe).toFixed(2)} s`
   })
   await step('effects: delay and reverb sends; a released tile echoes and glows; the meter moves', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setLayout('gallery'); window.__vs.setClip({ sends: { delay: 0.7, reverb: 0.6 } })")
@@ -443,7 +444,7 @@ try {
     const seen = []
     for (const mode of ['light', 'dark']) {
       await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] })
-      for (const m of ['play', 'shape', 'loop', 'post']) {
+      for (const m of ['play', 'shape', 'mix', 'post']) {
         await click(`.modekey.m-${m}`)
         await sleep(250)
         if (m === 'post') await evaluate("window.__vs.set('aspect', '9:16')")
@@ -462,7 +463,7 @@ try {
     const bg = await evaluate("getComputedStyle(document.body).backgroundColor")
     await page('Emulation.setEmulatedMedia', { features: [] })
     if (seen.some((x) => x.includes('outside'))) throw new Error(seen.join(', '))
-    return `${seen.slice(0, 4).join(', ')} captured in both; body in dark ${bg}`
+    return `${seen.slice(0, 4).join(', ')} captured in both, beside the timeline; body in dark ${bg}`
   })
   await step('undo an edit; the project saves itself and comes back after a reload', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")
@@ -475,7 +476,7 @@ try {
     await evaluate('location.reload()')
     await sleep(1500)
     await until(`window.__vs && JSON.stringify(window.__vs.store.get().clips.map((c) => c.id)) === ${JSON.stringify(before)}`, 240000) // a loaded machine restores slowly
-    const back = await S('`${s.clips.length} clips, kind ${s.kind}, ${s.loopLayers.length + s.sections.reduce((n, x) => n + x.layers.length, 0)} looper layers`')
+    const back = await S('`${s.clips.length} clips, kind ${s.kind}, ${s.tracks.length} tracks, ${s.tracks.reduce((n, t) => n + Object.keys(t.cells).length + t.clips.length, 0)} cells and timeline clips`')
     if (after !== 'off') throw new Error(`undo left ${after}`)
     return `undo → filter ${after}; saved ${saved} clips; after reload: ${back}`
   })

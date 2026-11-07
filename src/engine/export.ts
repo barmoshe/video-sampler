@@ -5,8 +5,8 @@
 import { AudioBufferSource, BufferTarget, canEncodeAudio, Mp4OutputFormat, Output, VideoSample, VideoSampleSource } from 'mediabunny'
 import { AudioEngine } from './audio'
 import { normalise } from './loudness-out'
-import { Performer, type InstrumentState } from './performer'
-import type { Stage, DrawOptions, Look } from './stage'
+import { Performer, type InstrumentState, type TrackMix } from './performer'
+import { LOOKS, type Stage, type DrawOptions, type Look } from './stage'
 import { LayoutEngine } from './layout'
 import type { Take } from './take'
 import type { Clip, LayoutMode, StageAspect } from './types'
@@ -34,6 +34,9 @@ interface Deps {
   fx: FxSettings
   bpm: number
   look?: Look
+  /** A song (ADR 0773): one performer per track over one voice book, and the stage laid out by track. */
+  tracks?: { id: string; state: InstrumentState; mix: TrackMix; mode: LayoutMode }[]
+  trackMode?: LayoutMode
 }
 
 const LEAD = 0.1, TAIL = 1.5, FS = 48000
@@ -47,8 +50,13 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
   engine.setFx(d.fx, d.bpm)
   const used = new Set<string>()
   const all: EngineEvent[] = []
-  const performer = new Performer(structuredClone(d.state), d.clips, { send: (evs) => { all.push(...evs) }, frameOf: (t) => Math.round(t * FS) })
-  for (const { t, ev } of take.events) performer.play(ev, LEAD + t)
+  const sink = { send: (evs: EngineEvent[]) => { all.push(...evs) }, frameOf: (t: number) => Math.round(t * FS) }
+  const performer = new Performer(structuredClone(d.state), d.clips, sink)
+  const byTrack = new Map((d.tracks ?? []).map((tr) => [tr.id, new Performer(structuredClone(tr.state), d.clips, sink, { book: performer.book, track: tr.id, mix: () => tr.mix })]))
+  for (const { t, ev } of take.events) {
+    const tr = (ev.type === 'on' || ev.type === 'off') && ev.track ? byTrack.get(ev.track) : undefined
+    ;(tr ?? performer).play(ev, LEAD + t)
+  }
   for (const v of performer.book.voices) used.add(v.clipId)
   for (const id of used) {
     const lv = d.levels.get(id), clip = d.clips.get(id)
@@ -63,7 +71,8 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
   // ---- picture, on the live stage's canvas and GPU cache (one GL context holds the frames)
   const [W, H] = exportSize(o.aspect, o.height)
   const canvas = d.stage.canvas
-  const keep = { w: canvas.width, h: canvas.height, layout: d.stage.layout }
+  const keep = { w: canvas.width, h: canvas.height, layout: d.stage.layout, inner: d.stage.inner }
+  d.stage.inner = new Map()
   d.stage.resize(W, H)
   d.stage.layout = new LayoutEngine()
   const target = new BufferTarget()
@@ -85,9 +94,13 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     const cues = take.events.flatMap((e) => (e.ev.type === 'layout' ? [{ t: LEAD + e.t, mode: e.ev.mode, section: e.ev.section }] : []))
     const cueAt = (t: number) => { let c: (typeof cues)[number] | undefined; for (const x of cues) if (x.t <= t) c = x; return c }
     const modeAt = (t: number) => (o.followSections === false ? o.layout : cueAt(t)?.mode ?? o.layout)
+    // a song's picture track: its look cues change the tiles' look over time
+    const looks = take.events.flatMap((e) => (e.ev.type === 'look' ? [{ t: LEAD + e.t, look: LOOKS.find((l) => l.id === (e.ev as { look: string }).look)?.look }] : []))
+    const lookAt = (t: number) => { let l = d.look; for (const x of looks) if (x.t <= t && x.look) l = x.look; return l }
+    const tracks = d.tracks?.map((tr, i) => ({ id: tr.id, order: i, mode: tr.mode }))
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
-      d.stage.drawAt(t, t, voices, d.clips, { echo: { time: delaySeconds(d.fx, d.bpm), feedback: d.fx.delay.feedback, level: d.fx.delay.level, decay: d.fx.reverb.decay, reverb: d.fx.reverb.level }, section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold, look: d.look })
+      d.stage.drawAt(t, t, voices, d.clips, { echo: { time: delaySeconds(d.fx, d.bpm), feedback: d.fx.delay.feedback, level: d.fx.delay.level, decay: d.fx.reverb.decay, reverb: d.fx.reverb.level }, section: cueAt(t)?.section, mode: tracks ? o.layout : modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold, look: lookAt(t), tracks, trackMode: tracks ? modeAt(t) : undefined, holdTracks: tracks ? seconds : undefined })
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
       for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
       const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })
@@ -99,6 +112,7 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
   } finally {
     d.stage.resize(keep.w, keep.h)
     d.stage.layout = keep.layout
+    d.stage.inner = keep.inner
   }
   progress(1, 'Done')
   return new Blob([target.buffer!], { type: 'video/mp4' })

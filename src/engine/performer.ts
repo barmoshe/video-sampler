@@ -15,6 +15,9 @@ import { velocityGain } from './voice-math'
 import type { EngineEvent } from './worklet/voice-engine'
 
 export interface Sink { send(evs: EngineEvent[]): void; frameOf(t: number): number }
+/** A track's place in the mix (ADR 0773): its fader as linear gain, its pan, and whether it sounds. */
+export interface TrackMix { gain: number; pan: number; on: boolean }
+export interface PerformerOptions { book?: VoiceBook; track?: string; mix?: () => TrackMix }
 
 export interface InstrumentState {
   kind: InstrumentKind
@@ -30,10 +33,11 @@ export interface InstrumentState {
  * tile for all its notes, ADR 0771).
  */
 export type PlayEvent =
-  | { type: 'on'; note: number; vel: number; src?: number; cell?: string }
-  | { type: 'off'; note: number; src?: number }
+  | { type: 'on'; note: number; vel: number; src?: number; cell?: string; track?: string }
+  | { type: 'off'; note: number; src?: number; track?: string }
   | { type: 'main'; clipId: string | null; gain: number; offset?: number; place?: MainPlace } // the section's main video, from `offset` s
   | { type: 'layout'; mode: LayoutMode; section?: string } // a section starts here: its layout (a cue the export follows)
+  | { type: 'look'; look: string } // a picture track changes the look of the tiles (ADR 0773)
   | { type: 'sustain'; down: boolean }
   | { type: 'bend'; value: number } // −1..1
   | { type: 'macro'; index: number; value: number }
@@ -42,7 +46,9 @@ export type PlayEvent =
 const STEAL_MS = 6, CHOKE_MS = 20
 
 export class Performer {
-  book = new VoiceBook()
+  book: VoiceBook
+  readonly track?: string
+  private mix?: () => TrackMix
   private sustain = false
   private sustained = new Set<number>() // voice ids held by the pedal
   private held = new Map<number, number[]>() // note → voice ids from that key
@@ -55,10 +61,27 @@ export class Performer {
   clips: Map<string, Clip>
   sink: Sink
 
-  constructor(state: InstrumentState, clips: Map<string, Clip>, sink: Sink) {
+  constructor(state: InstrumentState, clips: Map<string, Clip>, sink: Sink, o: PerformerOptions = {}) {
     this.state = state
     this.clips = clips
     this.sink = sink
+    this.book = o.book ?? new VoiceBook()
+    this.track = o.track
+    this.mix = o.mix
+  }
+
+  /** This performer's voices: a song's tracks share one book (and one engine). */
+  private mine(t: number) { return this.book.live(t).filter((v) => v.cell !== 'main' && v.track === this.track) }
+
+  /** A fader moved: held voices follow, sound and picture (the tile dims with the gain). */
+  retrack(ratio: number, t: number) {
+    if (!Number.isFinite(ratio) || Math.abs(ratio - 1) < 1e-4) return
+    const evs: EngineEvent[] = []
+    for (const v of this.mine(t)) {
+      v.gain *= ratio
+      evs.push({ kind: 'gain', frame: this.sink.frameOf(t), id: v.id, gain: v.gain * v.gains[v.gains.length - 1][1] })
+    }
+    if (evs.length) this.sink.send(evs)
   }
 
   private rnd = () => { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296 }
@@ -91,12 +114,18 @@ export class Performer {
   }
 
   noteOn(note: number, vel: number, t: number, src = 0, cell?: string) {
-    const { specs: raw, sel } = this.specs(note, vel)
-    if (!raw.length) return
+    const mix = this.mix?.()
+    if (mix && !mix.on) return
+    const { specs: found, sel } = this.specs(note, vel)
+    if (!found.length) return
+    const raw = this.track === undefined ? found : found.map((sp) => ({
+      ...sp, track: this.track, cell: `${sp.cell}@${this.track}`, // one tile per note inside the track's region
+      gain: sp.gain * (mix?.gain ?? 1), pan: Math.max(-1, Math.min(1, sp.pan + (mix?.pan ?? 0))),
+    }))
     const specs = cell ? raw.map((sp) => ({ ...sp, cell })) : raw
     const evs: EngineEvent[] = []
     const frame = this.sink.frameOf(t)
-    const live = this.book.live(t).filter((v) => v.cell !== 'main')
+    const live = this.mine(t)
     // cut what this note replaces: retrig (same note), mono groups, choke groups
     for (const sp of specs) {
       for (const v of live) {
@@ -109,7 +138,7 @@ export class Performer {
     const cap = this.voiceCap()
     let count = live.length
     while (count + specs.length > cap) {
-      const pool = this.book.live(t).filter((v) => v.cell !== 'main')
+      const pool = this.mine(t)
       const victim = pool.find((v) => v.off <= t) ?? pool[0]
       if (!victim) break
       this.kill(victim, t, STEAL_MS, evs)
@@ -178,7 +207,7 @@ export class Performer {
     const ratio = Math.pow(2, (semi - this.bend) / 12)
     this.bend = semi
     const evs: EngineEvent[] = []
-    for (const v of this.book.live(t)) {
+    for (const v of this.mine(t)) {
       if (!v.gate) continue
       const r = v.rates[v.rates.length - 1][1] * ratio
       this.book.setRate(v, t, r)
@@ -196,12 +225,12 @@ export class Performer {
     if (this.state.kind !== 'layers') return
     const sel = selectorValue(L)
     const evs: EngineEvent[] = []
-    for (const v of this.book.live(t)) {
+    for (const v of this.mine(t)) {
       const raw = L.chains.find((c) => c.id === v.chain)
       if (!raw) continue
       const c = effectiveChain(raw, L.macros)
       const z = L.selectBy === 'macro' ? zone(sel, c.selLo, c.selHi, c.selFade) : v.gains[v.gains.length - 1][1]
-      const base = velocityGain(v.vel) * dB(c.volume) * zone(v.note, c.keyLo, c.keyHi, c.keyFade) * zone(v.vel, c.velLo, c.velHi, c.velFade)
+      const base = velocityGain(v.vel) * dB(c.volume) * zone(v.note, c.keyLo, c.keyHi, c.keyFade) * zone(v.vel, c.velLo, c.velHi, c.velFade) * (this.mix?.().gain ?? 1)
       v.gain = base
       this.book.setGain(v, t, z)
       evs.push({ kind: 'gain', frame: this.sink.frameOf(t), id: v.id, gain: base * z })
@@ -232,7 +261,7 @@ export class Performer {
   /** All notes off. The main video keeps playing (it is not a note); setMain(null) stops it. */
   panic(t: number) {
     const evs: EngineEvent[] = []
-    for (const v of this.book.live(t)) if (v.cell !== 'main') this.kill(v, t, CHOKE_MS, evs)
+    for (const v of this.mine(t)) this.kill(v, t, CHOKE_MS, evs)
     this.held.clear(); this.sustained.clear(); this.sustain = false
     if (evs.length) this.sink.send(evs)
   }

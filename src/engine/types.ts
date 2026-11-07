@@ -42,6 +42,7 @@ export interface NoteSpec {
   lfo?: LfoSpec // per-voice LFO (absent = none)
   sendA?: number // to the delay return, 0..1
   sendB?: number // to the reverb return, 0..1
+  track?: string // the song track that played it (ADR 0773): stealing, chokes and the tile stay inside it
 }
 
 /** A sounding (or fading) voice, as the main thread knows it. The picture is a pure function of this. */
