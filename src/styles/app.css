@@ -225,3 +225,7 @@ button.key { padding: 0 0 6px; }
 .sampler-ed { margin-top: 4px; }
 .sampler-ed .filmstrip { display: block; width: 100%; height: 30px; object-fit: fill; border-radius: 6px 6px 0 0; border: 1px solid var(--rule); border-bottom: 0; }
 .sampler-ed canvas { display: block; width: 100%; background: var(--raise); border: 1px solid var(--rule); border-radius: 0 0 6px 6px; cursor: ew-resize; touch-action: none; }
+
+/* the about dialog */
+.credits { margin: 0; padding-left: 18px; font-size: 12px; display: grid; gap: 3px; }
+.credits a { color: inherit; }

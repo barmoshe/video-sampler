@@ -68,3 +68,31 @@ export async function clearProject(): Promise<void> {
 export async function askToKeep(): Promise<boolean> {
   try { return (await navigator.storage.persisted()) || (await navigator.storage.persist()) } catch { return false }
 }
+
+// ---------- the project file (.vsamp): one file to keep, move or share a project ----------------
+// Layout: "VSAMP1\n", a 4-byte little-endian header length, the header (JSON: the project and an
+// entry per clip), then each clip's original bytes in the header's order.
+
+const MAGIC = 'VSAMP1\n'
+interface PackEntry { id: string; name: string; file: string; type: string; size: number }
+
+export async function packProject(p: SavedProject, files: Map<string, File>): Promise<Blob> {
+  const entries: PackEntry[] = p.clips.flatMap((c) => { const f = files.get(c.id); return f ? [{ id: c.id, name: c.name, file: c.file, type: f.type, size: f.size }] : [] })
+  const head = new TextEncoder().encode(JSON.stringify({ project: p, entries }))
+  const len = new Uint8Array(4)
+  new DataView(len.buffer).setUint32(0, head.length, true)
+  return new Blob([MAGIC, len, head, ...entries.map((e) => files.get(e.id)!)], { type: 'application/octet-stream' })
+}
+
+export async function unpackProject(b: Blob): Promise<{ project: SavedProject; files: Map<string, File> }> {
+  const magic = await b.slice(0, MAGIC.length).text()
+  if (magic !== MAGIC) throw new Error('This is not a video sampler project file.')
+  const len = new DataView(await b.slice(MAGIC.length, MAGIC.length + 4).arrayBuffer()).getUint32(0, true)
+  let at = MAGIC.length + 4
+  const { project, entries } = JSON.parse(await b.slice(at, at + len).text()) as { project: SavedProject; entries: PackEntry[] }
+  at += len
+  const files = new Map<string, File>()
+  for (const e of entries) { files.set(e.id, new File([b.slice(at, at + e.size)], e.name, { type: e.type })); at += e.size }
+  if (project.v !== 1) throw new Error('This project file is from a newer version.')
+  return { project, files }
+}

@@ -7,8 +7,9 @@ import {
 import { attachKeyboard, connectMidi, MidiReceiver, type InputHandlers } from './input'
 import { importClip } from './media'
 import { History } from './history'
+import { blocking, support } from './support'
 import { defaultFx, delaySeconds, type FxSettings } from './fx'
-import { askToKeep, canPersist, clearProject, loadProject, readClipFile, saveClipFile, saveProject } from './persist'
+import { askToKeep, canPersist, clearProject, loadProject, packProject, readClipFile, saveClipFile, saveProject, unpackProject, type SavedClip, type SavedProject } from './persist'
 import { chordNotes, defaultScale, keyNote, snap, type ScaleSetting } from './scale'
 import { clicksIn, defaultTransport, LayerRecorder, loopSeconds, nextBar, notesIn, SECTION_IDS, type Layer, type Section, type Transport } from './looper'
 import type { MainPlace } from './performer'
@@ -116,6 +117,8 @@ export class App {
   }
 
   private async boot() {
+    const stop = blocking(support())
+    if (stop) { this.say(stop); return }
     this.engine = await AudioEngine.create(this.ctx)
     this.engine.setFx(this.store.get().fx, this.store.get().transport.bpm)
     this.performer = new Performer(this.instrumentState(), this.clips, {
@@ -181,35 +184,64 @@ export class App {
     if (!canPersist()) return
     const p = await loadProject()
     if (!p || !p.clips.length) return
+    await this.load(p, async (c) => readClipFile(c.file, c.name), 'Restoring', `Your last project is back (${p.clips.length} clip${p.clips.length === 1 ? '' : 's'}).`)
+  }
+
+  /** Bring a project in: import each clip with its own id, then apply the saved settings. */
+  private async load(p: SavedProject, fileFor: (c: SavedClip) => Promise<File | null>, verb: string, done: string) {
     await this.stageReady
+    if (!this.engine) return
     this.restoring = true
     try {
       for (const c of p.clips) {
-        const f = await readClipFile(c.file, c.name)
+        if (this.clips.has(c.id)) continue
+        const f = await fileFor(c)
         if (!f) continue
-        this.store.set({ importing: { name: c.name, progress: 0, stage: 'Restoring' } })
-        const { clip, fwd, rev } = await importClip(f, c.name, this.ctx, this.stage!.cache, (q, stage) => this.store.set({ importing: { name: c.name, progress: q, stage: `Restoring · ${stage}` } }), c.id)
+        this.store.set({ importing: { name: c.name, progress: 0, stage: verb } })
+        const { clip, fwd, rev } = await importClip(f, c.name, this.ctx, this.stage!.cache, (q, stage) => this.store.set({ importing: { name: c.name, progress: q, stage: `${verb} · ${stage}` } }), c.id)
         this.clips.set(clip.id, clip)
         this.levels.set(clip.id, { fwd, rev })
-        this.clipFiles.set(clip.id, c.file)
-        await this.engine!.loadClip(clip.id, clip.fs, fwd, rev)
+        await this.engine.loadClip(clip.id, clip.fs, fwd, rev)
+        if (canPersist()) this.clipFiles.set(clip.id, c.file && (await readClipFile(c.file, c.name)) ? c.file : await saveClipFile(f, f.name))
         this.store.set((s) => ({ clips: [...s.clips, clip] }))
       }
       const base = initial()
       const doc = p.doc as Partial<AppState>
       const merged: Partial<AppState> = {}
-      for (const k of SAVE_KEYS) if (k in doc) (merged as Record<string, unknown>)[k] = { ...(typeof base[k] === 'object' && base[k] && !Array.isArray(base[k]) ? base[k] as object : {}), ...(doc[k] as object) }
-      for (const k of SAVE_KEYS) if (k in doc && (Array.isArray(doc[k]) || typeof doc[k] !== 'object' || doc[k] === null)) (merged as Record<string, unknown>)[k] = doc[k]
+      for (const k of SAVE_KEYS) {
+        if (!(k in doc)) continue
+        const v = doc[k], b = base[k]
+        ;(merged as Record<string, unknown>)[k] = v && typeof v === 'object' && !Array.isArray(v) && b && typeof b === 'object' && !Array.isArray(b) ? { ...b, ...v } : v
+      }
       this.store.set({ ...merged, importing: null, savedAt: p.savedAt })
-      this.say(`Your last project is back (${p.clips.length} clip${p.clips.length === 1 ? '' : 's'}).`)
+      this.say(done)
     } catch (e) {
-      this.say(`Could not restore the last project: ${(e as Error).message}`)
+      this.say(`Could not open the project: ${(e as Error).message}`)
     } finally {
       this.restoring = false
       this.store.set({ importing: null })
       this.lastRefs = SAVE_KEYS.map((k) => this.store.get()[k])
       this.history.reset()
+      this.scheduleSave()
     }
+  }
+
+  /** Download the whole project (settings and clips) as one file to keep or move. */
+  async saveProjectFile() {
+    const s = this.store.get()
+    const files = new Map<string, File>()
+    for (const c of s.clips) { const name = this.clipFiles.get(c.id); const f = name ? await readClipFile(name, c.name) : null; if (f) files.set(c.id, f) }
+    if (s.clips.length && files.size < s.clips.length) { this.say('Some clips are not stored in this browser yet, so they cannot go into the file. Try again in a moment.'); return }
+    const p: SavedProject = { v: 1, savedAt: Date.now(), clips: s.clips.map((c) => ({ id: c.id, name: c.name, file: this.clipFiles.get(c.id) ?? '' })), doc: pick(s, SAVE_KEYS) }
+    download(await packProject(p, files), `video-sampler project ${new Date().toISOString().slice(0, 10)}.vsamp`)
+  }
+
+  /** Open a project file: its clips join this project, its settings replace these. */
+  async openProjectFile(file: File) {
+    try {
+      const { project, files } = await unpackProject(file)
+      await this.load(project, async (c) => files.get(c.id) ?? null, 'Opening', `Opened ${file.name} (${project.clips.length} clip${project.clips.length === 1 ? '' : 's'}).`)
+    } catch (e) { this.say((e as Error).message) }
   }
 
   /** A new, empty project: forget the saved one and start over. */
@@ -355,7 +387,9 @@ export class App {
   // ---------- clips ------------------------------------------------------------------------------
   async importFiles(files: File[], target?: { pad?: number; layer?: string }) {
     await this.ready
+    if (!this.engine) return // the browser lacks what the app needs (the message is already showing)
     for (const f of files) {
+      if (/\.vsamp$/i.test(f.name)) { await this.openProjectFile(f); continue }
       if (/\.midi?$/i.test(f.name) || f.type === 'audio/midi') { await this.loadMidi(f); continue }
       if (!this.stage) return
       this.store.set({ importing: { name: f.name, progress: 0, stage: 'Opening' } })

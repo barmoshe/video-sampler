@@ -1,9 +1,11 @@
+import { useRef } from 'react'
 import { app } from '../engine/app'
 import { useStore } from '../engine/store'
 import { Seg, Slider } from './controls'
 import { Dialog } from './Dialog'
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const openFile = useRef<HTMLInputElement>(null)
   const s = useStore(app.store, (x) => x)
   const tight = Math.ceil(((app.ctx.outputLatency || 0) + app.ctx.baseLatency) * 1000 + 5)
   return (
@@ -17,8 +19,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <p className="muted" style={{ margin: 0 }}>A key cannot be drawn before you press it. Tight sound plays at once and the picture follows; In sync waits for the picture. Takes and exports are always exact.</p>
       <Seg label="Tiles" value={s.fit ? 'fit' : 'fill'} options={[['fill', 'Fill (crop to the tile)'], ['fit', 'Fit (whole picture)']]} onChange={(v) => app.set('fit', v === 'fit')} />
       <Slider label="Pitch bend range" value={s.bendRange} min={1} max={24} format={(v) => `±${v} st`} onChange={(v) => app.set('bendRange', v)} />
-      <p className="muted" style={{ margin: 0 }}>Your project saves itself in this browser and comes back when you return. Clearing the browser's data removes it.</p>
-      <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => { if (confirm('Start a new, empty project? The saved one is removed from this browser.')) void app.newProject() }}>New project</button>
+      <p className="muted" style={{ margin: 0 }}>Your project saves itself in this browser and comes back when you return. Clearing the browser's data removes it, so save a project file to keep it or move it to another computer.</p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn" onClick={() => void app.saveProjectFile()}>Save project file</button>
+        <button type="button" className="btn" onClick={() => openFile.current?.click()}>Open project file</button>
+        <button type="button" className="btn" onClick={() => { if (confirm('Start a new, empty project? The saved one is removed from this browser.')) void app.newProject() }}>New project</button>
+      </div>
+      <input ref={openFile} type="file" accept=".vsamp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) { onClose(); void app.openProjectFile(f) } e.target.value = '' }} />
     </Dialog>
   )
 }

@@ -47,7 +47,7 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
       onDrop={(e) => { e.preventDefault(); setOver(false); files(e.dataTransfer.files) }}
     >
       <canvas ref={canvas} style={{ width: css.w, height: css.h }} aria-hidden="true" />
-      <input ref={file} type="file" accept="video/*,.mid,.midi" multiple hidden onChange={(e) => { files(e.target.files); e.target.value = '' }} />
+      <input ref={file} type="file" accept="video/*,.mid,.midi,.vsamp" multiple hidden onChange={(e) => { files(e.target.files); e.target.value = '' }} />
       {!hasClips && !importing && (
         <div className="overlay">
           <div className="empty">
@@ -59,7 +59,7 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
               <button type="button" className="btn" onClick={onLibrary}>Open the library</button>
               <button type="button" className="btn" onClick={() => void app.loadDemo()}>Try a demo clip</button>
             </div>
-            <p className="small">Or drop a video (or a .mid file) anywhere here. Then play with the keys A to ' or a MIDI keyboard. Your clips stay on this computer.</p>
+            <p className="small">Or drop a video, a .mid or a project file anywhere here. Then play with the keys A to ' or a MIDI keyboard. Your clips stay on this computer.</p>
           </div>
         </div>
       )}

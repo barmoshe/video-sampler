@@ -7,6 +7,8 @@ import { ClipPanel } from './ClipPanel'
 import { ExportDialog } from './ExportDialog'
 import { Keyboard } from './Keyboard'
 import { LayersPanel } from './LayersPanel'
+import { MIDI_NOTE, support } from '../engine/support'
+import { AboutDialog } from './AboutDialog'
 import { FxDialog } from './FxDialog'
 import { LibraryDialog } from './LibraryDialog'
 import { Meter } from './Meter'
@@ -20,7 +22,8 @@ const ASPECTS: [StageAspect, string][] = [['16:9', '16:9'], ['9:16', '9:16'], ['
 
 export function App() {
   const s = useStore(app.store, (x) => x)
-  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | 'library' | 'fx' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'camera' | 'settings' | 'library' | 'fx' | 'about' | null>(null)
+  const [can] = useState(support)
   useEffect(() => app.attachKeyboard(), [])
 
   const layout = s.layouts[s.kind]
@@ -53,7 +56,7 @@ export function App() {
           {s.playing ? '■ Stop' : '▶ Play take'}
         </button>
         <button type="button" className="btn primary" disabled={!s.take || s.recording} onClick={() => setDialog('export')}>Export MP4</button>
-        <button type="button" className="btn" onClick={() => app.connectMidi()} title="Connect MIDI keyboards and Ableton (IAC)">
+        <button type="button" className="btn" disabled={!can.midi} onClick={() => app.connectMidi()} title={can.midi ? 'Connect MIDI keyboards and Ableton (IAC)' : MIDI_NOTE}>
           <span className={`dot ${s.midiDevices?.length ? 'blue' : 'off'}`} /> MIDI
         </button>
         <button type="button" className="btn" onClick={() => setDialog('settings')} aria-label="Settings">⚙</button>
@@ -78,6 +81,7 @@ export function App() {
         <span>sustain <b>Space</b> · bend <b>↑ ↓</b> · record <b>Enter</b></span>
         <span>{s.midiDevices === null ? 'MIDI not connected' : s.midiDevices.length ? `MIDI: ${s.midiDevices.join(', ')}` : 'MIDI: no inputs'}{s.bpm ? ` · clock ${s.bpm} BPM` : ''}</span>
         {s.savedAt && <span title="Your project saves itself in this browser">saved {new Date(s.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+        <button type="button" className="x" style={{ fontSize: 11 }} onClick={() => setDialog('about')}>about and licences</button>
         {s.take && <span>take <b>{s.take.duration.toFixed(1)} s</b> · <button type="button" className="x" style={{ fontSize: 11 }} onClick={() => app.downloadMidi()}>save .mid</button></span>}
       </footer>
 
@@ -86,6 +90,7 @@ export function App() {
       {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} />}
       {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
       {dialog === 'fx' && <FxDialog onClose={() => setDialog(null)} />}
+      {dialog === 'about' && <AboutDialog onClose={() => setDialog(null)} />}
     </div>
   )
 }

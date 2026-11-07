@@ -1,0 +1,24 @@
+# Gates on every push and pull request: typecheck, lint (jsx-a11y on), unit tests, build.
+# The end-to-end check (tools/check.mjs) needs a GPU and test media, so it runs locally before a push.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx vite build
