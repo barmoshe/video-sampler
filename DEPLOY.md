@@ -12,7 +12,7 @@ The `vercel-deploy` skill in `bar_builds` reads this before every deploy. Produc
 | Git connection | **none**: a push does not deploy. Deploy with `create_deployment` (`gitSource` github, `barmoshe/video-sampler`, `ref` main, the full `sha`) or `npx vercel` here |
 | Protection | Vercel Authentication on generated deployment URLs; the production domain is public |
 | Live check | `node tools/check.mjs --url https://video-sampler-ten.vercel.app` (the same 16 steps as local, headless Chrome). A single-page app with no sitemap: the kit's `postdeploy-check.mjs` checks `/` only |
-| `--expect` | a string only the new build has (for the demo clip build: `Try a demo clip`) |
+| `--expect` | a string only the new build has (VIDAW build: `<title>VIDAW</title>`) |
 
 ## History
 
@@ -20,3 +20,9 @@ The `vercel-deploy` skill in `bar_builds` reads this before every deploy. Produc
   preview, it became **production** (the project had no production yet), without Bar's word
   (ADR 0393). Live check 15 / 15, no console errors; import of a 30 s 1080p clip 68.9 s on a
   loaded machine (50 s locally at the same moment). Kept up pending Bar's call.
+- 2026-11-07, `96e07c5`, `dpl_C1empctLXVja3jjPbBnYZde4eyRs`: a **preview** (target none) of VIDAW (the
+  video DAW and the first brand pass) for Bar's review, on his "Yes, preview". READY in about 10 s;
+  `/` serves the VIDAW build (title, Instrument Sans, favicon), `/library/manifest.json` the 26-item pack.
+  Behind Vercel Authentication; a share link (expires 2026-11-08 18:14) was handed to Bar. Production is
+  unchanged (`9c50d8f`).
+

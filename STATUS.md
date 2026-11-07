@@ -8,7 +8,7 @@ The app is **VIDAW**, a video DAW (ADRs 0772, 0773, 0774 in the workshop). On `m
 (tracks of four kinds, board and timeline, each track a tile, song export) and the first brand pass
 (Ableton's discipline, the split-screen mark, light by default), **awaiting Bar's review**. Gates: tsc,
 oxlint (zero warnings), 65 unit tests, build, and `node tools/check.mjs` 29 / 29 in light and dark;
-CI green on `07d87d1`. Production still serves the v1 demo build `9c50d8f`; nothing newer is deployed.
+CI green on `07d87d1`. A **preview** of `96e07c5` is up for Bar's review (`DEPLOY.md`); production still serves the v1 demo build `9c50d8f`.
 The full picture, open items and questions: `bar_builds/lab/video-sampler/HANDOFF.md`.
 
 ## History (v1, kept for the record)
