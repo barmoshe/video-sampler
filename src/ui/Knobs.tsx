@@ -226,12 +226,12 @@ export function DeckKnobs() {
     <section className="knobs" aria-label="Knobs">
       <header>
         <span className="target" title={target}>{target}</span>
-        <nav className="pages" aria-label="Knob pages">
-          {pages.map((p) => <button key={p.id} type="button" aria-pressed={p === cur} onClick={() => ui.set({ page: { ...u.page, [key]: p.id } })}>{p.name}</button>)}
-        </nav>
         {(u.mode === 'play' || u.mode === 'shape') && <button type="button" className="more" aria-pressed={u.sheet} onClick={() => ui.set({ sheet: !u.sheet })} title="Every setting for this instrument">More</button>}
       </header>
-      <div className="khead">{cur.head}</div>
+      <nav className="pagerow" aria-label="Knob pages">
+        <span className="pages">{pages.map((p) => <button key={p.id} type="button" aria-pressed={p === cur} onClick={() => ui.set({ page: { ...u.page, [key]: p.id } })}>{p.name}</button>)}</span>
+        {cur.head && <span className="khead">{cur.head}</span>}
+      </nav>
       <div className="kgrid">
         {cur.knobs.map((k, i) => k
           ? (

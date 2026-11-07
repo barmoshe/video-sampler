@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- VIDAW's app icon (ADR 0775): the split-screen mark as layered glass on a dark squircle, each tile lit
+       from behind by a track colour. Built for macOS's icon grid (824 px body inside 1024, 100 px margin). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34353D"/><stop offset="1" stop-color="#121216"/></linearGradient>
+    <radialGradient id="g1" cx="0.3" cy="0.75" r="0.6"><stop offset="0" stop-color="#F2683C" stop-opacity=".95"/><stop offset="1" stop-color="#F2683C" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g2" cx="0.5" cy="0.3" r="0.6"><stop offset="0" stop-color="#3E8EF7" stop-opacity=".95"/><stop offset="1" stop-color="#3E8EF7" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g3" cx="0.7" cy="0.7" r="0.6"><stop offset="0" stop-color="#2EBD85" stop-opacity=".95"/><stop offset="1" stop-color="#2EBD85" stop-opacity="0"/></radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".5" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".1"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset=".35" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity=".35"/></linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="38"/></filter>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <!-- light behind the glass -->
+    <g filter="url(#soft)">
+      <rect x="228" y="330" width="190" height="380" rx="40" fill="url(#g1)"/>
+      <rect x="417" y="300" width="190" height="380" rx="40" fill="url(#g2)"/>
+      <rect x="606" y="330" width="190" height="380" rx="40" fill="url(#g3)"/>
+    </g>
+    <!-- the screen: a glass frame holding three glass tiles -->
+    <rect x="196" y="302" width="632" height="420" rx="54" fill="#fff" fill-opacity=".05" stroke="url(#rim)" stroke-width="10"/>
+    <g>
+      <rect x="246" y="352" width="168" height="320" rx="26" fill="url(#glass)" stroke="url(#rim)" stroke-width="5"/>
+      <rect x="428" y="352" width="168" height="320" rx="26" fill="url(#glass)" stroke="url(#rim)" stroke-width="5"/>
+      <rect x="610" y="352" width="168" height="320" rx="26" fill="url(#glass)" stroke="url(#rim)" stroke-width="5"/>
+    </g>
+    <rect x="100" y="100" width="824" height="420" fill="url(#sheen)"/>
+  </g>
+  <rect x="101" y="101" width="822" height="822" rx="185" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2"/>
+</svg>

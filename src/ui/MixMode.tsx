@@ -1,4 +1,5 @@
 import { app } from '../engine/app'
+import { trackColor } from './palette'
 import { audible, type Track } from '../engine/song'
 import { useStore } from '../engine/store'
 import { rgb, panText } from './format'
@@ -15,7 +16,7 @@ function Strip({ t, sel, all }: { t: Track; sel: boolean; all: Track[] }) {
   const on = audible(t, all)
   const gain = Math.pow(10, t.mix.volume / 20)
   return (
-    <div className={`strip2 ${sel ? 'sel' : ''} ${on ? '' : 'off'}`} style={{ ['--h' as string]: `hsl(${t.hue} 70% 55%)` }}>
+    <div className={`strip2 ${sel ? 'sel' : ''} ${on ? '' : 'off'}`} style={{ ['--h' as string]: trackColor(t) }}>
       <button type="button" className="mtile" onClick={() => (t.kind === 'instrument' || t.kind === 'video') && app.selectTrack(t.id)} aria-label={`Select ${t.name}`}
         style={{ background: thumb ? `${rgb(thumb.poster)} url(${thumb.thumb}) center / cover` : undefined, opacity: on ? 0.35 + 0.65 * Math.min(1, gain) : 0.25 }}>
         {!thumb && <span>{t.kind}</span>}

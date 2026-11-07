@@ -4,11 +4,15 @@
 
 ## Now (read this first)
 
-The app is **VIDAW**, a video DAW (ADRs 0772, 0773, 0774 in the workshop). On `main`: the song model
-(tracks of four kinds, board and timeline, each track a tile, song export) and the first brand pass
-(Ableton's discipline, the split-screen mark, light by default), **awaiting Bar's review**. Gates: tsc,
-oxlint (zero warnings), 65 unit tests, build, and `node tools/check.mjs` 29 / 29 in light and dark;
-CI green on `07d87d1`. A **preview** of `96e07c5` is up for Bar's review (`DEPLOY.md`); production still serves the v1 demo build `9c50d8f`.
+The app is **VIDAW**, a video DAW (ADRs 0772-0775 in the workshop). On `main`: the song model
+(tracks of four kinds, board and timeline, each track a tile, song export), the brand (Ableton's
+discipline, the split-screen mark, light by default) and the design system of ADR 0775: a macOS Tahoe pro
+app in Liquid Glass. The window is not glass (a solid colour with the mark's three tiles as a sharp
+wallpaper; Settings offers Plain); the song, the deck and the inspector are thick glass panels, the
+toolbar's capsules and the video's overlays thinner glass with a lens at the rim; system font, Apple's
+macOS sizes, a fixed track palette, a glass app icon. **Awaiting Bar's review.** Gates: tsc, oxlint (zero
+warnings), 65 unit tests, build, and `node tools/check.mjs` 29 / 29 in light and dark with no console
+errors. Production still serves the v1 demo build `9c50d8f`; previews in `DEPLOY.md`.
 The full picture, open items and questions: `bar_builds/lab/video-sampler/HANDOFF.md`.
 
 ## History (v1, kept for the record)

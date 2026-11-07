@@ -358,6 +358,28 @@ export class App {
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
     if (Math.random() < 0.02) this.book.prune(this.ctx.currentTime)
+    this.ambientFrame(now, n)
+  }
+
+  // ---------- the ambient backdrop (ADR 0775): the stage, tiny and soft, behind the glass ---------
+  private ambient: CanvasRenderingContext2D | null = null
+  private ambientAt = 0
+  private idleImg: HTMLImageElement | null = null
+  attachAmbient(canvas: HTMLCanvasElement) { this.ambient = canvas.getContext('2d', { alpha: false }); return () => { this.ambient = null } }
+  /** About fifteen times a second: copy the stage (right after it drew, while its pixels are there), or
+   *  the selected clip's frame when nothing sounds, into the 48×27 backdrop the CSS spreads and softens. */
+  private ambientFrame(now: number, sounding: number) {
+    const g = this.ambient
+    if (!g || !this.stage || now - this.ambientAt < 66) return
+    this.ambientAt = now
+    const { width: w, height: h } = g.canvas
+    if (sounding > 0) { g.drawImage(this.stage.canvas, 0, 0, w, h); return }
+    const s = this.store.get()
+    const id = s.kind === 'pads' ? s.pads.chains.find((c) => c.note === s.pads.selected)?.clipId : s.kind === 'layers' ? s.layers.chains[0]?.clipId : s.clip.clipId
+    const thumb = s.clips.find((c) => c.id === id)?.thumb
+    if (!thumb) return
+    if (this.idleImg?.src !== thumb) { this.idleImg = new Image(); this.idleImg.src = thumb }
+    if (this.idleImg.complete && this.idleImg.naturalWidth) g.drawImage(this.idleImg, 0, 0, w, h)
   }
 
   bankBase() { return PAD_BASE + this.store.get().pads.bank * 16 }

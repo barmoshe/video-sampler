@@ -7,6 +7,7 @@ import { noteName } from '../engine/voice-math'
 import { ClipPanel } from './ClipPanel'
 import { LayersPanel } from './LayersPanel'
 import { PadsPanel } from './PadsPanel'
+import { Lens } from './glass'
 import { Close, Expand, Plus } from './icons'
 import { ui } from './ui'
 
@@ -18,9 +19,9 @@ function Hud() {
   if (!h) return null
   // a new value remounts it, which restarts its fade (CSS): visible while turning, gone a second after
   return (
-    <output key={h.at} className="hud" aria-live="off">
+    <Lens as="output" key={h.at} className="hud" radius={14} bezel={14} strength={34} aria-live="off">
       <span>{h.label}</span><b>{h.value}</b>{h.hint && <em>{h.hint}</em>}
-    </output>
+    </Lens>
   )
 }
 
@@ -35,7 +36,7 @@ function Badge() {
   const text = kind === 'clip'
     ? clip ? `${clip.name}${clipP.mode !== 'slice' ? `, home ${noteName(homeKey(clipP, clip))}` : ', sliced'}` : 'no clip'
     : kind === 'pads' ? `${pads} pad${pads === 1 ? '' : 's'} loaded` : `${layers} layer${layers === 1 ? '' : 's'}`
-  return <div className="badge"><b>{kind}</b><span>{text}</span>{voices > 0 && <span className="v">{voices} on stage</span>}</div>
+  return <Lens className="badge" radius={10} bezel={9} strength={22}><b>{kind}</b><span>{text}</span>{voices > 0 && <span className="v">{voices} on stage</span>}</Lens>
 }
 
 /** Where Reels, TikTok and Shorts put their buttons and captions over a 9:16 frame. */
@@ -128,6 +129,8 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
         {mode === 'post' && safe && aspect === '9:16' && <SafeZones w={css.w} h={css.h} />}
         {hasClips && <Badge />}
         <Hud />
+        {hasClips && <Lens className="stagebtn add" radius={17} bezel={10} strength={24}><button type="button" onClick={() => file.current?.click()} title="Add a video, a .mid or a project file"><Plus size={13} />Add</button></Lens>}
+        <Lens className="stagebtn stagetoggle" radius={17} bezel={10} strength={24}><button type="button" aria-pressed={big} onClick={() => ui.set({ big: !big })} title={big ? 'Show the song beside the stage' : 'The stage alone, as big as it goes'}><Expand size={13} />{big ? 'Show the song' : 'Stage only'}</button></Lens>
         {hasClips && coach && !played && mode === 'play' && (
           <p className="coach">{kind === 'pads' ? <>Play the pads with <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd>, or click them</> : <>Play with <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> … or click the keys</>}</p>
         )}
@@ -145,8 +148,6 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
         )}
       </div>
       <input ref={file} type="file" accept="video/*,.mid,.midi,.vsamp" multiple hidden onChange={(e) => { files(e.target.files); e.target.value = '' }} />
-      {hasClips && <button type="button" className="btn add" onClick={() => file.current?.click()} title="Add a video, a .mid or a project file"><Plus size={13} />Add</button>}
-      <button type="button" className="btn sm stagetoggle" aria-pressed={big} onClick={() => ui.set({ big: !big })} title={big ? 'Show the song beside the stage' : 'The stage alone, as big as it goes'}><Expand size={13} />{big ? 'Show the song' : 'Stage only'}</button>
       {over && <div className="drop-hint">Drop to load</div>}
       {importing && (
         <output className="progress">

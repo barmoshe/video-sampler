@@ -50,6 +50,16 @@ export function setTheme(t: Theme) {
   try { localStorage.setItem('vs.theme', t) } catch { /* a private window: the theme just isn't remembered */ }
 }
 
+export type Wall = 'mark' | 'plain'
+/** The window's wallpaper (ADR 0775): the mark's three tiles, sharp, so the glass has colour to bend; or plain. */
+export function wall(): Wall {
+  try { return localStorage.getItem('vs.wall') === 'plain' ? 'plain' : 'mark' } catch { return 'mark' }
+}
+export function setWall(w: Wall) {
+  document.documentElement.dataset.wall = w
+  try { localStorage.setItem('vs.wall', w) } catch { /* a private window: the wallpaper just isn't remembered */ }
+}
+
 export function setMode(mode: DeckMode) {
   ui.set({ mode, sheet: false })
   try { localStorage.setItem('vs.mode', mode) } catch { /* private window: the mode just isn't remembered */ }

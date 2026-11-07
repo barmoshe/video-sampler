@@ -7,9 +7,11 @@ import { Deck } from './Deck'
 import { ExportDialog } from './ExportDialog'
 import { LibraryDialog } from './LibraryDialog'
 import { SettingsDialog } from './SettingsDialog'
+import { Wallpaper } from './glass'
 import { SongView } from './SongView'
 import { StagePane } from './StagePane'
 import { TopBar } from './TopBar'
+import { trackColor } from './palette'
 import { ui } from './ui'
 
 /**
@@ -23,9 +25,12 @@ export function App() {
   const kind = useStore(app.store, (s) => s.kind)
   const big = useStore(ui, (u) => u.big)
   const hue = useStore(app.store, (s) => s.tracks.find((t) => t.id === s.sel)?.hue ?? 22)
+  const color = trackColor(hue)
   useEffect(() => app.attachKeyboard(), [])
   return (
-    <div className={`app mode-${mode} kind-${kind}`} style={{ ['--track-h' as string]: hue }}>
+    <>
+    <Wallpaper />
+    <div className={`app mode-${mode} kind-${kind}`} style={{ ['--track' as string]: color }}>
       <TopBar onSettings={() => setDialog('settings')} onLibrary={() => setDialog('library')} onAbout={() => setDialog('about')} />
       <div className={`work ${big ? 'big' : ''}`}>
         <StagePane onCamera={() => setDialog('camera')} onLibrary={() => setDialog('library')} />
@@ -39,5 +44,6 @@ export function App() {
       {dialog === 'library' && <LibraryDialog onClose={() => setDialog(null)} />}
       {dialog === 'about' && <AboutDialog onClose={() => setDialog(null)} />}
     </div>
+    </>
   )
 }

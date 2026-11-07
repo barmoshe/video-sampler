@@ -5,6 +5,7 @@ import { useStore } from '../engine/store'
 import { rgb } from './format'
 import { useSongTracks } from './hooks'
 import { Play, Plus } from './icons'
+import { trackColor } from './palette'
 import { trackThumb } from './thumbs'
 import { ui, type Pick } from './ui'
 
@@ -15,7 +16,8 @@ const KINDS: [TrackKind, string, string][] = [
   ['backing', 'Backing', 'A video or song played as recorded under everything'],
   ['picture', 'Picture', 'Cues that change the layout and the look over time'],
 ]
-const hue = (t: Track, l = 55, a = 1) => `hsl(${t.hue} 70% ${l}% / ${a})`
+/** A track's colour, or a see-through mix of it for fills. */
+const hue = (t: Track, _l = 55, a = 1) => (a >= 1 ? trackColor(t) : `color-mix(in oklab, ${trackColor(t)} ${Math.round(a * 100)}%, transparent)`)
 
 /** A clip's notes as a small piano roll, in the track's colour. */
 function Notes({ c, t, w }: { c: SongClip; t: Track; w: number }) {
@@ -26,7 +28,7 @@ function Notes({ c, t, w }: { c: SongClip; t: Track; w: number }) {
     <svg className="notes" viewBox={`0 0 ${w} 100`} preserveAspectRatio="none" aria-hidden="true">
       {Array.from({ length: reps }, (_, k) => c.notes.filter((n) => k * c.loop + n.at < c.len).slice(0, 200).map((n, i) => (
         <rect key={`${k}:${i}`} x={((k * c.loop + n.at) / c.len) * w} width={Math.max(1.5, (Math.min(n.len, c.len - k * c.loop - n.at) / c.len) * w - 0.5)}
-          y={hi > lo ? 80 - ((n.note - lo) / (hi - lo)) * 64 : 40} height={16} rx={2} fill={hue(t, 38)} opacity={k ? 0.55 : 0.95} />
+          y={hi > lo ? 80 - ((n.note - lo) / (hi - lo)) * 64 : 40} height={16} rx={2} fill={trackColor(t)} opacity={k ? 0.55 : 0.95} />
       )))}
     </svg>
   )
@@ -63,6 +65,15 @@ function AddTrack() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Below the tracks: add one of each kind in a click (the empty area of Live's track list). */
+function AddRow() {
+  return (
+    <div className="addrow">
+      {KINDS.map(([k, l, d]) => <button key={k} type="button" onClick={() => app.addTrack(k)} title={d}><Plus size={11} />{l}</button>)}
     </div>
   )
 }
@@ -114,6 +125,7 @@ function Board({ tracks }: { tracks: Track[] }) {
           <div />
         </div>
       ))}
+      <AddRow />
     </section>
   )
 }
@@ -195,6 +207,7 @@ function Timeline({ tracks }: { tracks: Track[] }) {
             </div>
           </div>
         ))}
+        <AddRow />
         <i className="playhead" style={{ left: 180 + head * ppb }} />
       </div>
     </div>

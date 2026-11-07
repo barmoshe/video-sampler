@@ -2,28 +2,52 @@ import { useState } from 'react'
 import { app } from '../engine/app'
 import { useStore } from '../engine/store'
 import { MIDI_NOTE, support } from '../engine/support'
-import { Gear, Library as LibraryIcon, Midi, Play, Rec, Redo, Stop, Undo } from './icons'
-import { Logo } from './Logo'
+import { Gear, Library as LibraryIcon, Metronome, Midi, Play, Rec, Redo, Stop, Undo } from './icons'
+import { Lens } from './glass'
+import { Mark } from './Logo'
 import { Meter } from './Meter'
 import { setMode } from './ui'
 
-/** Where the song is: bar.beat on the timeline, or the bar inside the playing scene. */
-function Position() {
+/** The toolbar's glass: refracted at the rim, then a light frost so the wallpaper's colour comes through. */
+const FROST = 'blur(7px) saturate(190%) brightness(1.04)'
+
+/**
+ * The LCD (after Logic's): where the song is, large, with its tempo and metre beside it. On the board it
+ * shows the playing scene and the bar inside it.
+ */
+function Lcd() {
   const beat = useStore(app.clock, (c) => c.beat)
-  const beats = useStore(app.store, (s) => s.transport.beats)
+  const tr = useStore(app.store, (s) => s.transport)
   const sceneOn = useStore(app.store, (s) => s.sceneOn)
   const songOn = useStore(app.store, (s) => s.songOn)
-  const bar = Math.floor(beat / beats) + 1, b = Math.floor(beat % beats) + 1
-  return <span className="posn" title="Bar and beat">{songOn === 'board' && sceneOn ? <b className="scn">{sceneOn}</b> : null}<b>{bar}</b>.{b}</span>
+  const bar = Math.floor(beat / tr.beats) + 1, b = Math.floor(beat % tr.beats) + 1
+  const sixteenth = Math.floor((beat % 1) * 4) + 1
+  return (
+    <Lens as="fieldset" className="lcd" radius={19} bezel={11} strength={20} frost={FROST}><legend className="sr">Position and tempo</legend>
+      <div className="lcd-pos" title="Bar, beat and sixteenth">
+        {songOn === 'board' && sceneOn ? <span className="lcd-scene">{sceneOn}</span> : null}
+        <span className="lcd-big">{bar}</span><span className="lcd-dot">.</span><span className="lcd-big">{b}</span><span className="lcd-dot">.</span><span className="lcd-small">{sixteenth}</span>
+      </div>
+      <label className="lcd-field" title="Tempo">
+        <input type="number" min={40} max={240} value={tr.bpm} disabled={!!songOn} aria-label="Tempo in BPM" onChange={(e) => app.setTransport({ bpm: Math.max(40, Math.min(240, Number(e.target.value) || tr.bpm)) })} />
+        <span>bpm</span>
+      </label>
+      <span className="lcd-field" title="Beats in a bar"><b>{tr.beats}/4</b></span>
+    </Lens>
+  )
 }
 
-/** The slim bar over the stage: the song's transport, record, capture, undo and settings. */
+/**
+ * The window's toolbar, macOS style (ADR 0775): the song on the leading side, the transport and the LCD in
+ * the middle, grouped actions trailing. Its background drags the window in the desktop app; leading space
+ * is left for the traffic lights there.
+ */
 export function TopBar({ onSettings, onLibrary, onAbout }: { onSettings: () => void; onLibrary: () => void; onAbout: () => void }) {
   const songOn = useStore(app.store, (s) => s.songOn)
   const songRec = useStore(app.store, (s) => s.songRec)
   const view = useStore(app.store, (s) => s.view)
   const recording = useStore(app.store, (s) => s.recording)
-  const tr = useStore(app.store, (s) => s.transport)
+  const metronome = useStore(app.store, (s) => s.transport.metronome)
   const canUndo = useStore(app.store, (s) => s.canUndo)
   const canRedo = useStore(app.store, (s) => s.canRedo)
   const midi = useStore(app.store, (s) => s.midiDevices)
@@ -33,29 +57,37 @@ export function TopBar({ onSettings, onLibrary, onAbout }: { onSettings: () => v
   const [can] = useState(support)
   return (
     <header className="top">
-      <button type="button" className="brand" onClick={onAbout} title="About VIDAW, the keys and the licences" aria-label="VIDAW: about, keys and licences"><Logo /></button>
-      <fieldset className="transport-mini"><legend className="sr">Transport</legend>
-        <button type="button" className="tbtn" aria-pressed={!!songOn} onClick={() => (songOn ? app.songStop() : app.songStart(view))} title={songOn ? 'Stop' : `Play the ${view}`} aria-label={songOn ? 'Stop' : 'Play'}>{songOn ? <Stop /> : <Play />}</button>
-        <button type="button" className="tbtn rec" aria-label="Record into the song" aria-pressed={!!songRec} onClick={() => app.songRecord()} title={`Record into ${track ?? 'the selected track'}: the ${view === 'board' ? "playing scene's cell, overdubbing each pass" : 'timeline from the playhead'} (\` or Enter)`}><Rec /></button>
-        <Position />
-        <label className="bpm" title="Tempo">
-          <input type="number" min={40} max={240} value={tr.bpm} disabled={!!songOn} aria-label="Tempo in BPM" onChange={(e) => app.setTransport({ bpm: Math.max(40, Math.min(240, Number(e.target.value) || tr.bpm)) })} /> BPM
-        </label>
-        <button type="button" className="tclick" aria-pressed={tr.metronome} onClick={() => app.setTransport({ metronome: !tr.metronome })} title="The metronome">Click</button>
-      </fieldset>
-      <span className="spacer" />
-      <button type="button" className="btn" aria-pressed={recording} onClick={() => app.toggleRecord()} title="Record a performance take (not into the song)">{recording ? 'Stop take' : 'Take'}</button>
-      <button type="button" className="btn" disabled={recording} onClick={() => app.capture()} title="Keep what you just played as a take, without having pressed record (Shift+Enter)">Capture</button>
-      {takes > 0 && <button type="button" className="btn ghost" onClick={() => setMode('post')} title="Your takes, ready to export">{takes} take{takes > 1 ? 's' : ''}</button>}
-      <span className="sep" />
-      <button type="button" className="icon" disabled={!canUndo} onClick={() => app.undo()} title="Undo (⌘Z)" aria-label="Undo"><Undo /></button>
-      <button type="button" className="icon" disabled={!canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)" aria-label="Redo"><Redo /></button>
-      <Meter />
-      <button type="button" className="icon wide" onClick={onLibrary} title="The sound and video library"><LibraryIcon />Library</button>
-      <button type="button" className="icon wide" disabled={!can.midi} onClick={() => app.connectMidi()} title={can.midi ? (midi?.length ? `MIDI: ${midi.join(', ')}` : 'Connect MIDI keyboards and Ableton (IAC)') : MIDI_NOTE}>
-        <Midi style={{ color: midi?.length ? 'var(--blue)' : undefined }} />MIDI
-      </button>
-      <button type="button" className="icon" onClick={onSettings} aria-label="Settings" title={savedAt ? `Settings (saved at ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : 'Settings'}><Gear /></button>
+      <div className="tb-lead">
+        <button type="button" className="brand" onClick={onAbout} title="About VIDAW, the keys and the licences" aria-label="VIDAW: about, keys and licences">
+          <span className="appicon" aria-hidden="true"><Mark size={11} /></span>
+          <span className="tb-title"><b>Untitled song</b><small>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'VIDAW'}</small></span>
+        </button>
+      </div>
+      <div className="tb-center">
+        <Lens as="fieldset" className="tb-group transport" radius={19} bezel={11} strength={20} frost={FROST}><legend className="sr">Transport</legend>
+          <button type="button" className="tb-btn" aria-pressed={!!songOn} onClick={() => (songOn ? app.songStop() : app.songStart(view))} title={songOn ? 'Stop' : `Play the ${view}`} aria-label={songOn ? 'Stop' : 'Play'}>{songOn ? <Stop /> : <Play />}</button>
+          <button type="button" className="tb-btn rec" aria-pressed={!!songRec} onClick={() => app.songRecord()} title={`Record into ${track ?? 'the selected track'} (\` or Enter)`} aria-label="Record into the song"><Rec /></button>
+          <button type="button" className="tb-btn" aria-pressed={metronome} onClick={() => app.setTransport({ metronome: !metronome })} title="Metronome" aria-label="Metronome"><Metronome /></button>
+        </Lens>
+        <Lcd />
+      </div>
+      <div className="tb-trail">
+        <Lens as="fieldset" className="tb-group" radius={19} bezel={11} strength={20} frost={FROST}><legend className="sr">Takes</legend>
+          <button type="button" className="tb-btn text" aria-pressed={recording} onClick={() => app.toggleRecord()} title="Record a performance take (not into the song)">{recording ? 'Stop take' : 'Take'}</button>
+          <button type="button" className="tb-btn text" disabled={recording} onClick={() => app.capture()} title="Keep what you just played as a take (Shift+Enter)">Capture</button>
+          {takes > 0 && <button type="button" className="tb-btn text dim" onClick={() => setMode('post')} title="Your takes, ready to export">{takes}</button>}
+        </Lens>
+        <Lens as="fieldset" className="tb-group" radius={19} bezel={11} strength={20} frost={FROST}><legend className="sr">History</legend>
+          <button type="button" className="tb-btn" disabled={!canUndo} onClick={() => app.undo()} title="Undo (⌘Z)" aria-label="Undo"><Undo /></button>
+          <button type="button" className="tb-btn" disabled={!canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)" aria-label="Redo"><Redo /></button>
+        </Lens>
+        <Meter />
+        <Lens as="fieldset" className="tb-group" radius={19} bezel={11} strength={20} frost={FROST}><legend className="sr">Library, MIDI and settings</legend>
+          <button type="button" className="tb-btn" onClick={onLibrary} title="The sound and video library" aria-label="Library"><LibraryIcon /></button>
+          <button type="button" className={`tb-btn ${midi?.length ? 'lit' : ''}`} disabled={!can.midi} onClick={() => app.connectMidi()} title={can.midi ? (midi?.length ? `MIDI: ${midi.join(', ')}` : 'Connect MIDI keyboards and Ableton (IAC)') : MIDI_NOTE} aria-label="MIDI"><Midi /></button>
+          <button type="button" className="tb-btn" onClick={onSettings} aria-label="Settings" title="Settings"><Gear /></button>
+        </Lens>
+      </div>
     </header>
   )
 }

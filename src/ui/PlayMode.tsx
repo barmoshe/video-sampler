@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { LOOKS } from '../engine/stage'
 import { app } from '../engine/app'
+import { trackColor } from './palette'
 import type { LibraryItem } from '../engine/library'
 import { useStore } from '../engine/store'
 import { Keyboard, ScaleBar } from './Keyboard'
@@ -65,7 +66,7 @@ export function Instruments() {
 function TrackChip() {
   const t = useStore(app.store, (s) => s.tracks.find((x) => x.id === s.sel))
   if (!t) return null
-  return <span className="trackchip" style={{ ['--h' as string]: `hsl(${t.hue} 70% 55%)` }} title="The selected track: the keys, pads and MIDI play it">{t.name}</span>
+  return <span className="trackchip" style={{ ['--h' as string]: trackColor(t) }} title="The selected track: the keys, pads and MIDI play it">{t.name}</span>
 }
 
 /** A video, backing or picture track has no keys: what PLAY offers for it instead. */

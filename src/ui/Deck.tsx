@@ -24,20 +24,24 @@ export function Deck({ onLibrary, onCamera, onExport }: { onLibrary: () => void;
     addEventListener('keydown', key)
     return () => removeEventListener('keydown', key)
   }, [])
+  const sub = MODES.find((m) => m[0] === mode)?.[2]
   return (
     <section className="deck" aria-label="Deck">
-      <nav className="modes" aria-label="Modes">
-        {MODES.map(([m, l, sub], i) => (
-          <button key={m} type="button" className={`modekey m-${m}`} aria-pressed={mode === m} onClick={() => setMode(m)} title={`${l}: ${sub} (Option+${i + 1})`}>
-            <i className="led" /><b>{l}</b><small>{sub}</small>
-          </button>
-        ))}
-      </nav>
-      <div className="deck-body">
-        {mode === 'play' && <PlayMode onLibrary={onLibrary} onCamera={onCamera} />}
-        {mode === 'shape' && (pick ? <div className="mode-body shape"><PianoRoll pick={pick} /></div> : <ShapeMode />)}
-        {mode === 'mix' && <MixMode />}
-        {mode === 'post' && <PostMode onExport={onExport} />}
+      <div className="deck-main">
+        <header className="deck-head">
+          <fieldset className="segctl" aria-label="Modes"><legend className="sr">Modes</legend>
+            {MODES.map(([m, l, s2], i) => (
+              <button key={m} type="button" data-mode={m} aria-pressed={mode === m} onClick={() => setMode(m)} title={`${l}: ${s2} (Option+${i + 1})`}>{l}</button>
+            ))}
+          </fieldset>
+          <span className="deck-sub">{sub}</span>
+        </header>
+        <div className="deck-body">
+          {mode === 'play' && <PlayMode onLibrary={onLibrary} onCamera={onCamera} />}
+          {mode === 'shape' && (pick ? <div className="mode-body shape"><PianoRoll pick={pick} /></div> : <ShapeMode />)}
+          {mode === 'mix' && <MixMode />}
+          {mode === 'post' && <PostMode onExport={onExport} />}
+        </div>
       </div>
       <DeckKnobs />
     </section>
