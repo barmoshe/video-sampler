@@ -35,5 +35,5 @@ The `vercel-deploy` skill in `bar_builds` reads this before every deploy. Produc
   `index-CaGn_2l7.css` as the local build), then **production** `dpl_8fxMy6F7WjBgDbns4jWNp8FycBek`, READY
   in about 12 s; the domain moved by itself (`list_deployment_aliases` lists video-sampler-ten.vercel.app).
   `postdeploy-check.mjs https://video-sampler-ten.vercel.app --expect index-YcSZVPtd.js`: OK. The full
-  `tools/check.mjs --url` live run was not done (a local full run was still going); the last local full
-  run was 28 / 29 (the chord step, open in `STATUS.md`).
+  `tools/check.mjs --url` live run was not done (a local full run was still going); the last two local full
+  runs were 28 / 29 and 27 / 29 (the chord step in both, the reload step's OPFS read once; open in `STATUS.md`).
