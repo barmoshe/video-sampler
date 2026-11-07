@@ -13,7 +13,8 @@ screen: M turns the computer keyboard on and off and Space plays and stops, as i
 is named on the picture and selects the track. **Awaiting Bar's review; Bar has also asked for a restyle
 (less rounded, VIDAW's own design and brand), not started.** Gates: tsc, oxlint (zero warnings), 65 unit
 tests, build; `node tools/check.mjs` 28 / 29 on the last full run (the chord step read 1 tile at 600 ms on a
-freshly imported clip; open). Deploys in `DEPLOY.md`.
+freshly imported clip; open). **Production serves `636dc9a`** (video-sampler-ten.vercel.app, 07/11); deploys
+in `DEPLOY.md`.
 The full picture, open items and questions: `bar_builds/lab/video-sampler/HANDOFF.md`.
 
 ## History (v1, kept for the record)

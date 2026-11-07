@@ -29,3 +29,11 @@ The `vercel-deploy` skill in `bar_builds` reads this before every deploy. Produc
   glass panels and capsules over a solid window with the mark's tiles as a wallpaper), on Bar's "Yes, fix
   the glass". READY in about 10 s; `/` serves the same `index-CfgOm7FW.css` as the build the check passed.
   Share link until 2026-11-08 19:12. Production is unchanged (`9c50d8f`).
+- 2026-11-07, `636dc9a`: the window of ADR 0776 (the picture is the desk; no modes, no keys on screen),
+  on Bar's "Push and deploy what we have by now" and "push to main and update all relevant docs deploy".
+  Preview `dpl_jc8gMaffQ5AsBbpuhBhevLc295zZ` read first (same `index-YcSZVPtd.js` and
+  `index-CaGn_2l7.css` as the local build), then **production** `dpl_8fxMy6F7WjBgDbns4jWNp8FycBek`, READY
+  in about 12 s; the domain moved by itself (`list_deployment_aliases` lists video-sampler-ten.vercel.app).
+  `postdeploy-check.mjs https://video-sampler-ten.vercel.app --expect index-YcSZVPtd.js`: OK. The full
+  `tools/check.mjs --url` live run was not done (a local full run was still going); the last local full
+  run was 28 / 29 (the chord step, open in `STATUS.md`).
