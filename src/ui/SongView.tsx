@@ -4,6 +4,7 @@ import { songEnd, type SongClip, type Track, type TrackKind } from '../engine/so
 import { useStore } from '../engine/store'
 import { rgb } from './format'
 import { useSongTracks } from './hooks'
+import { Play, Plus } from './icons'
 import { trackThumb } from './thumbs'
 import { ui, type Pick } from './ui'
 
@@ -54,7 +55,7 @@ function AddTrack() {
   const [open, setOpen] = useState(false)
   return (
     <div className="addtrack">
-      <button type="button" className="btn sm" aria-expanded={open} onClick={() => setOpen(!open)}>+ Track</button>
+      <button type="button" className="btn sm" aria-expanded={open} onClick={() => setOpen(!open)}><Plus size={13} />Track</button>
       {open && (
         <div className="menu" role="menu">
           {KINDS.map(([k, l, d]) => (
@@ -80,11 +81,11 @@ function Board({ tracks }: { tracks: Track[] }) {
       <div className="corner"><AddTrack /></div>
       {s.scenes.map((sc, i) => (
         <div key={sc.id} className={`scene ${s.sceneOn === sc.id && songOn === 'board' ? 'on' : ''} ${s.queued === sc.id ? 'queued' : ''}`}>
-          <button type="button" className="launch2" onClick={() => app.launchScene(sc.id)} title={`Play scene ${sc.name} (key ${i + 1}); while the board plays it starts on the next bar`}>▶ <b>{sc.name}</b></button>
-          <button type="button" className="place" onClick={() => app.placeScene(sc.id)} title={`Put scene ${sc.name} on the timeline, at the song's end`}>→ song</button>
+          <button type="button" className="launch2" onClick={() => app.launchScene(sc.id)} title={`Play scene ${sc.name} (key ${i + 1}); while the board plays it starts on the next bar`}><Play size={11} /><b>{sc.name}</b></button>
+          <button type="button" className="place" onClick={() => app.placeScene(sc.id)} title={`Put scene ${sc.name} on the timeline, at the song's end`}>Add to song</button>
         </div>
       ))}
-      <div><button type="button" className="addscene" onClick={() => app.addScene()} title="A new scene">+</button></div>
+      <div><button type="button" className="addscene" onClick={() => app.addScene()} title="A new scene" aria-label="Add a scene"><Plus size={14} /></button></div>
       {tracks.map((t) => (
         <div key={t.id} className="brow">
           <div className="rhead"><TrackHead t={t} sel={t.id === s.sel} /></div>
@@ -102,7 +103,7 @@ function Board({ tracks }: { tracks: Track[] }) {
                   title={c ? `${t.name}, scene ${sc.name}: ${c.len / 4} bar${c.len === 4 ? '' : 's'}${c.notes.length ? `, ${c.notes.length} notes` : ''}` : t.kind === 'instrument' || t.kind === 'video' ? `Empty: double-click to record ${t.name} into scene ${sc.name}` : 'Empty'}
                   aria-label={c ? `${t.name}, scene ${sc.name}` : `${t.name}, scene ${sc.name}, empty`}>
                   {thumb && <span className="cthumb" style={{ background: `${rgb(thumb.poster)} url(${thumb.thumb}) center / cover` }} />}
-                  {c?.cue && <span className="cue">{[c.cue.layout, c.cue.look].filter(Boolean).join(' · ')}</span>}
+                  {c?.cue && <span className="cue">{[c.cue.layout, c.cue.look].filter(Boolean).join(', ')}</span>}
                   {c && <Notes c={c} t={t} w={100} />}
                   {playing && c && <i className="phase" style={{ width: `${((beat % c.loop) / c.loop) * 100}%` }} />}
                   {rec && <span className="recdot" />}
@@ -185,7 +186,7 @@ function Timeline({ tracks }: { tracks: Track[] }) {
                     onPointerUp={() => { drag.current = null }}
                     title={`${t.name}: drag to move (Alt: finer), drag the right edge to stretch; Delete removes it`}>
                     {thumb && <span className="strip" style={{ backgroundImage: `url(${thumb.thumb})`, backgroundColor: rgb(thumb.poster) }} />}
-                    {c.cue && <span className="cue">{[c.cue.layout, c.cue.look].filter(Boolean).join(' · ')}</span>}
+                    {c.cue && <span className="cue">{[c.cue.layout, c.cue.look].filter(Boolean).join(', ')}</span>}
                     <Notes c={c} t={t} w={Math.max(6, c.len * ppb)} />
                   </div>
                 )
@@ -233,7 +234,7 @@ export function SongView() {
           <button type="button" aria-pressed={view === 'board'} onClick={() => app.store.set({ view: 'board' })} title="Jam: scenes of loops (Tab)">Board</button>
           <button type="button" aria-pressed={view === 'timeline'} onClick={() => app.store.set({ view: 'timeline' })} title="Arrange: the song on bars (Tab)">Timeline</button>
         </fieldset>
-        <span className="hint">{view === 'board' ? 'Double-click an empty cell to record into it · ▶ plays a scene · → song puts it on the timeline' : 'Click the ruler to move the playhead · double-click a lane for a new clip · Delete, ⌘D'}</span>
+        <span className="hint">{view === 'board' ? 'Double-click an empty cell to record into it. Play a scene from its name; Add to song puts it on the timeline.' : 'Click the ruler to move the playhead; double-click a lane for a new clip; Delete removes, ⌘D duplicates.'}</span>
         {view === 'timeline' && <label className="zoom" title="Zoom">− <input type="range" min={8} max={64} value={ppb} onChange={(e) => ui.set({ ppb: Number(e.target.value) })} aria-label="Zoom" /> +</label>}
         {pick && <button type="button" className="btn sm" onClick={() => ui.set({ pick: null })}>Deselect</button>}
       </header>

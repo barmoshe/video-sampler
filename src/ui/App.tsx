@@ -22,9 +22,10 @@ export function App() {
   const mode = useStore(ui, (u) => u.mode)
   const kind = useStore(app.store, (s) => s.kind)
   const big = useStore(ui, (u) => u.big)
+  const hue = useStore(app.store, (s) => s.tracks.find((t) => t.id === s.sel)?.hue ?? 22)
   useEffect(() => app.attachKeyboard(), [])
   return (
-    <div className={`app mode-${mode} kind-${kind}`}>
+    <div className={`app mode-${mode} kind-${kind}`} style={{ ['--track-h' as string]: hue }}>
       <TopBar onSettings={() => setDialog('settings')} onLibrary={() => setDialog('library')} onAbout={() => setDialog('about')} />
       <div className={`work ${big ? 'big' : ''}`}>
         <StagePane onCamera={() => setDialog('camera')} onLibrary={() => setDialog('library')} />

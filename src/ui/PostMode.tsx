@@ -3,6 +3,7 @@ import { LOOKS } from '../engine/stage'
 import { useStore } from '../engine/store'
 import type { Take } from '../engine/take'
 import type { LayoutMode, StageAspect } from '../engine/types'
+import { Close, Play, Stop } from './icons'
 import { ui } from './ui'
 
 const LAYOUTS: [LayoutMode, string][] = [['gallery', 'Gallery'], ['mosaic', 'Mosaic'], ['spotlight', 'Spotlight'], ['stack', 'Stack'], ['keys', 'Keys'], ['home', 'Pad grid']]
@@ -60,9 +61,9 @@ export function PostMode({ onExport }: { onExport: (song: boolean) => void }) {
             <li key={t.id} className={`takecard ${t.id === take?.id ? 'sel' : ''}`}>
               <button type="button" className="tpick" aria-pressed={t.id === take?.id} onClick={() => t.id && app.selectTake(t.id)}>
                 <b>{t.name.replace(/ \d{1,2}:\d{2}:\d{2}.*$/, '')} {i + 1}</b>
-                <span>{t.duration.toFixed(1)} s · {t.events.filter((e) => e.ev.type === 'on').length} notes</span>
+                <span>{t.duration.toFixed(1)} s, {t.events.filter((e) => e.ev.type === 'on').length} notes</span>
               </button>
-              <button type="button" className="x" aria-label={`Delete ${t.name}`} onClick={() => t.id && app.deleteTake(t.id)}>×</button>
+              <button type="button" className="x" aria-label={`Delete ${t.name}`} onClick={() => t.id && app.deleteTake(t.id)}><Close size={12} /></button>
             </li>
           ))}
         </ul>
@@ -71,7 +72,7 @@ export function PostMode({ onExport }: { onExport: (song: boolean) => void }) {
           <>
             <Timeline take={take} />
             <div className="mrow">
-              <button type="button" className="btn sm" disabled={recording} onClick={() => (playing ? app.stopTake() : app.playTake())}>{playing ? '■ Stop' : '▶ Play the take'}</button>
+              <button type="button" className="btn sm" disabled={recording} onClick={() => (playing ? app.stopTake() : app.playTake())}>{playing ? <><Stop size={12} />Stop</> : <><Play size={12} />Play the take</>}</button>
               <button type="button" className="btn sm" onClick={() => app.downloadMidi()} title="The take's notes as a MIDI file, for a DAW">Save .mid</button>
               <span className="hint">The take is notes, not pixels: change the shape, layout and look, and it renders again.</span>
             </div>

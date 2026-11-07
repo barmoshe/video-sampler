@@ -204,8 +204,8 @@ function targetName(s: AppState, u: UiState) {
   if (u.mode === 'mix') return s.tracks.find((t) => t.id === s.sel)?.name ?? 'The mix'
   if (u.mode === 'post') return 'The picture'
   const name = (id: string | null | undefined) => s.clips.find((c) => c.id === id)?.name
-  if (s.kind === 'pads') { const sel = s.pads.chains.find((c) => c.note === s.pads.selected); return `Pad ${noteName(s.pads.selected)}${name(sel?.clipId) ? ` · ${name(sel?.clipId)}` : ''}` }
-  if (s.kind === 'layers') { const i = Math.max(0, s.layers.chains.findIndex((c) => c.id === u.layer)); const c = s.layers.chains[i]; return c ? `Layer ${i + 1}${name(c.clipId) ? ` · ${name(c.clipId)}` : ''}` : 'No layers yet' }
+  if (s.kind === 'pads') { const sel = s.pads.chains.find((c) => c.note === s.pads.selected); return `Pad ${noteName(s.pads.selected)}${name(sel?.clipId) ? `: ${name(sel?.clipId)}` : ''}` }
+  if (s.kind === 'layers') { const i = Math.max(0, s.layers.chains.findIndex((c) => c.id === u.layer)); const c = s.layers.chains[i]; return c ? `Layer ${i + 1}${name(c.clipId) ? `: ${name(c.clipId)}` : ''}` : 'No layers yet' }
   return name(s.clip.clipId) ?? 'No clip yet'
 }
 

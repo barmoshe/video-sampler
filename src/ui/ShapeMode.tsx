@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { app } from '../engine/app'
+import { Close } from './icons'
 import { clipRoot, homeKey, sliceTimes, type ClipParams, type LayerChain, type Tune } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import { noteName } from '../engine/voice-math'
@@ -36,7 +37,7 @@ function ShapeClip() {
         {p.mode === 'classic' && <Toggle label="Loop" on={p.loop} set={(loop) => set({ loop })} title="Loop between the blue handles while a key is held" />}
         <Toggle label="Reverse" on={p.reverse} set={(reverse) => set({ reverse })} />
         <span className="hint">
-          {p.mode === 'slice' ? <><b>{sliceTimes(p, clip).length}</b> slices from C1 · double-click to add one</> : <>home key <b>{home}</b>{clip.rootFound ? <> · sings {noteName(Math.round(clip.root))}</> : ' · no clear pitch'}</>}
+          {p.mode === 'slice' ? <><b>{sliceTimes(p, clip).length}</b> slices from C1; double-click to add one</> : <>home key <b>{home}</b>{clip.rootFound ? <> · sings {noteName(Math.round(clip.root))}</> : ' · no clear pitch'}</>}
         </span>
       </div>
       <SampleEditor p={p} clip={clip} height={96} help={false} />
@@ -65,7 +66,7 @@ function ShapePads() {
           {clip ? <img className="thumb big" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} /> : <span className="thumb big" />}
           <div>
             <b>Pad {noteName(pads.selected)}</b>
-            <span className="muted">{clip ? `${clip.name} · ${clip.duration.toFixed(2)} s` : 'Empty: pick a sound in Play, or load a video'}</span>
+            <span className="muted">{clip ? `${clip.name}, ${clip.duration.toFixed(2)} s` : 'Empty: pick a sound in Play, or load a video'}</span>
           </div>
           <button type="button" className="btn sm" onClick={() => file.current?.click()}>Load a video</button>
           {sel?.clipId && <button type="button" className="btn sm" onClick={() => set({ clipId: null })}>Clear</button>}
@@ -119,7 +120,7 @@ function ShapeLayers() {
         <span className="zl">keys {noteName(c.keyLo)}–{noteName(c.keyHi)}</span><Zone lo={c.keyLo} hi={c.keyHi} fade={c.keyFade} />
         <span className="zl">morph</span><Zone lo={c.selLo} hi={c.selHi} fade={c.selFade} mark={L.selector} />
         <button type="button" className="toggle" aria-pressed={c.mute} onClick={() => app.setLayer(c.id, { mute: !c.mute })}>M</button>
-        <button type="button" className="x" aria-label={`Remove layer ${i + 1}`} onClick={() => app.removeLayer(c.id)}>×</button>
+        <button type="button" className="x" aria-label={`Remove layer ${i + 1}`} onClick={() => app.removeLayer(c.id)}><Close size={12} /></button>
       </div>
     )
   }

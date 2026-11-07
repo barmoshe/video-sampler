@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { Close } from './icons'
 
 /** A native modal dialog: Escape and the × close it. */
 export function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
@@ -12,7 +13,7 @@ export function Dialog({ title, onClose, children, footer }: { title: string; on
   }, [onClose])
   return (
     <dialog ref={ref} aria-label={title}>
-      <header>{title}<button type="button" className="x" aria-label="Close" onClick={() => ref.current?.close()}>×</button></header>
+      <header>{title}<button type="button" className="x" aria-label="Close" onClick={() => ref.current?.close()}><Close size={15} /></button></header>
       <div className="body">{children}</div>
       {footer && <footer>{footer}</footer>}
     </dialog>

@@ -40,6 +40,16 @@ const remembered = (): DeckMode => {
 
 export const ui = createStore<UiState>({ mode: remembered(), page: {}, sheet: false, layer: null, hud: null, coach: true, safe: true, pick: null, ppb: 22, big: false })
 
+export type Theme = 'light' | 'dark' | 'system'
+/** Light by default (ADR 0774); dark, or the system's choice, from Settings. Remembered per browser. */
+export function theme(): Theme {
+  try { const t = localStorage.getItem('vs.theme'); return t === 'dark' || t === 'system' ? t : 'light' } catch { return 'light' }
+}
+export function setTheme(t: Theme) {
+  document.documentElement.dataset.theme = t
+  try { localStorage.setItem('vs.theme', t) } catch { /* a private window: the theme just isn't remembered */ }
+}
+
 export function setMode(mode: DeckMode) {
   ui.set({ mode, sheet: false })
   try { localStorage.setItem('vs.mode', mode) } catch { /* private window: the mode just isn't remembered */ }

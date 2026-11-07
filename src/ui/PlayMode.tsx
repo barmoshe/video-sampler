@@ -115,7 +115,7 @@ export function PlayMode({ onLibrary, onCamera }: { onLibrary: () => void; onCam
         <TrackChip />
         <Instruments />
         {kind !== 'pads'
-          ? <><ScaleBar /><span className="hint">octave <b>{octave >= 0 ? `+${octave}` : octave}</b> · Z X · velocity C V</span></>
+          ? <><ScaleBar /><span className="hint">Octave <b>{octave >= 0 ? `+${octave}` : octave}</b> on Z and X, velocity on C and V</span></>
           : (
             <fieldset className="minis"><legend className="sr">Pad modes</legend>
               <button type="button" aria-pressed={repeat} onClick={() => { app.setPadPlay({ repeat: !repeat }); ui.set({ page: { ...ui.get().page, 'play:pads': 'repeat' } }) }} title="Hold a pad: it repeats on the tempo grid">Note repeat</button>

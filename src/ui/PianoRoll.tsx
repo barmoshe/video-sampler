@@ -65,7 +65,7 @@ export function PianoRoll({ pick }: { pick: Pick }) {
             onPointerUp={() => { drag.current = null }} />
         ))}
       </div>
-      <p className="rollhint">{t.name} · {L / beats} bar{L === beats ? '' : 's'} · click to add a note, drag to move, Alt-click to remove</p>
+      <p className="rollhint">{t.name}, {L / beats} bar{L === beats ? '' : 's'}. Click to add a note, drag to move, Alt-click to remove</p>
     </div>
   )
 }

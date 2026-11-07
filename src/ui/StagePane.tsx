@@ -7,6 +7,7 @@ import { noteName } from '../engine/voice-math'
 import { ClipPanel } from './ClipPanel'
 import { LayersPanel } from './LayersPanel'
 import { PadsPanel } from './PadsPanel'
+import { Close, Expand, Plus } from './icons'
 import { ui } from './ui'
 
 const RATIO: Record<StageAspect, number> = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1 }
@@ -32,7 +33,7 @@ function Badge() {
   const layers = useStore(app.store, (s) => s.layers.chains.length)
   const voices = useStore(app.store, (s) => s.voices)
   const text = kind === 'clip'
-    ? clip ? `${clip.name}${clipP.mode !== 'slice' ? ` · home ${noteName(homeKey(clipP, clip))}` : ' · sliced'}` : 'no clip'
+    ? clip ? `${clip.name}${clipP.mode !== 'slice' ? `, home ${noteName(homeKey(clipP, clip))}` : ', sliced'}` : 'no clip'
     : kind === 'pads' ? `${pads} pad${pads === 1 ? '' : 's'} loaded` : `${layers} layer${layers === 1 ? '' : 's'}`
   return <div className="badge"><b>{kind}</b><span>{text}</span>{voices > 0 && <span className="v">{voices} on stage</span>}</div>
 }
@@ -53,7 +54,7 @@ function Sheet({ onCamera }: { onCamera: () => void }) {
   const kind = useStore(app.store, (s) => s.kind)
   return (
     <aside className="sheet" aria-label="Every setting">
-      <header><b>Every setting · {kind}</b><button type="button" className="x" aria-label="Close" onClick={() => ui.set({ sheet: false })}>×</button></header>
+      <header><b>Every setting for the {kind}</b><button type="button" className="x" aria-label="Close" onClick={() => ui.set({ sheet: false })}><Close size={14} /></button></header>
       <div className="sheet-body">
         {kind === 'clip' && <ClipPanel onCamera={onCamera} />}
         {kind === 'pads' && <PadsPanel onCamera={onCamera} />}
@@ -144,8 +145,8 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
         )}
       </div>
       <input ref={file} type="file" accept="video/*,.mid,.midi,.vsamp" multiple hidden onChange={(e) => { files(e.target.files); e.target.value = '' }} />
-      {hasClips && <button type="button" className="btn add" onClick={() => file.current?.click()} title="Add a video, a .mid or a project file">+ Add</button>}
-      <button type="button" className="btn sm stagetoggle" aria-pressed={big} onClick={() => ui.set({ big: !big })} title={big ? 'Show the song beside the stage' : 'The stage alone, as big as it goes'}>{big ? 'Show the song' : 'Stage only'}</button>
+      {hasClips && <button type="button" className="btn add" onClick={() => file.current?.click()} title="Add a video, a .mid or a project file"><Plus size={13} />Add</button>}
+      <button type="button" className="btn sm stagetoggle" aria-pressed={big} onClick={() => ui.set({ big: !big })} title={big ? 'Show the song beside the stage' : 'The stage alone, as big as it goes'}><Expand size={13} />{big ? 'Show the song' : 'Stage only'}</button>
       {over && <div className="drop-hint">Drop to load</div>}
       {importing && (
         <output className="progress">
@@ -155,14 +156,14 @@ export function StagePane({ onCamera, onLibrary }: { onCamera: () => void; onLib
       )}
       {exporting && (
         <output className="progress">
-          Exporting · {exporting.stage}
+          Exporting: {exporting.stage}
           <span className="bar"><i style={{ width: `${Math.round(exporting.progress * 100)}%` }} /></span>
         </output>
       )}
       {message && (
         <div className="toast" role="alert">
           <span>{message}</span>
-          <button type="button" className="x" aria-label="Dismiss" onClick={() => app.say(null)}>×</button>
+          <button type="button" className="x" aria-label="Dismiss" onClick={() => app.say(null)}><Close size={14} /></button>
         </div>
       )}
       {sheet && (mode === 'play' || mode === 'shape') && <Sheet onCamera={onCamera} />}

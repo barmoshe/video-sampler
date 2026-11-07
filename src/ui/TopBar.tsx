@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { app } from '../engine/app'
 import { useStore } from '../engine/store'
 import { MIDI_NOTE, support } from '../engine/support'
+import { Gear, Library as LibraryIcon, Midi, Play, Rec, Redo, Stop, Undo } from './icons'
+import { Logo } from './Logo'
 import { Meter } from './Meter'
 import { setMode } from './ui'
 
@@ -31,10 +33,10 @@ export function TopBar({ onSettings, onLibrary, onAbout }: { onSettings: () => v
   const [can] = useState(support)
   return (
     <header className="top">
-      <button type="button" className="brand" onClick={onAbout} title="About, keys and licences">video<b>·</b>sampler</button>
+      <button type="button" className="brand" onClick={onAbout} title="About VIDAW, the keys and the licences" aria-label="VIDAW: about, keys and licences"><Logo /></button>
       <fieldset className="transport-mini"><legend className="sr">Transport</legend>
-        <button type="button" className="tbtn" aria-pressed={!!songOn} onClick={() => (songOn ? app.songStop() : app.songStart(view))} title={songOn ? 'Stop (the song)' : `Play the ${view}`}>{songOn ? '■' : '▶'}</button>
-        <button type="button" className="tbtn rec" aria-label="Record into the song" aria-pressed={!!songRec} onClick={() => app.songRecord()} title={`Record into ${track ?? 'the selected track'}: the ${view === 'board' ? "playing scene's cell, overdubbing each pass" : 'timeline from the playhead'} (\` or Enter)`}><span className="dot" /></button>
+        <button type="button" className="tbtn" aria-pressed={!!songOn} onClick={() => (songOn ? app.songStop() : app.songStart(view))} title={songOn ? 'Stop' : `Play the ${view}`} aria-label={songOn ? 'Stop' : 'Play'}>{songOn ? <Stop /> : <Play />}</button>
+        <button type="button" className="tbtn rec" aria-label="Record into the song" aria-pressed={!!songRec} onClick={() => app.songRecord()} title={`Record into ${track ?? 'the selected track'}: the ${view === 'board' ? "playing scene's cell, overdubbing each pass" : 'timeline from the playhead'} (\` or Enter)`}><Rec /></button>
         <Position />
         <label className="bpm" title="Tempo">
           <input type="number" min={40} max={240} value={tr.bpm} disabled={!!songOn} aria-label="Tempo in BPM" onChange={(e) => app.setTransport({ bpm: Math.max(40, Math.min(240, Number(e.target.value) || tr.bpm)) })} /> BPM
@@ -46,14 +48,14 @@ export function TopBar({ onSettings, onLibrary, onAbout }: { onSettings: () => v
       <button type="button" className="btn" disabled={recording} onClick={() => app.capture()} title="Keep what you just played as a take, without having pressed record (Shift+Enter)">Capture</button>
       {takes > 0 && <button type="button" className="btn ghost" onClick={() => setMode('post')} title="Your takes, ready to export">{takes} take{takes > 1 ? 's' : ''}</button>}
       <span className="sep" />
-      <button type="button" className="icon" disabled={!canUndo} onClick={() => app.undo()} title="Undo (⌘Z)" aria-label="Undo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3 2 6l3 3" /><path d="M2.5 6H10a4 4 0 0 1 0 8H7" /></svg></button>
-      <button type="button" className="icon" disabled={!canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)" aria-label="Redo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m11 3 3 3-3 3" /><path d="M13.5 6H6a4 4 0 0 0 0 8h3" /></svg></button>
+      <button type="button" className="icon" disabled={!canUndo} onClick={() => app.undo()} title="Undo (⌘Z)" aria-label="Undo"><Undo /></button>
+      <button type="button" className="icon" disabled={!canRedo} onClick={() => app.redo()} title="Redo (⇧⌘Z)" aria-label="Redo"><Redo /></button>
       <Meter />
-      <button type="button" className="icon wide" onClick={onLibrary} title="The sound and video library">Library</button>
+      <button type="button" className="icon wide" onClick={onLibrary} title="The sound and video library"><LibraryIcon />Library</button>
       <button type="button" className="icon wide" disabled={!can.midi} onClick={() => app.connectMidi()} title={can.midi ? (midi?.length ? `MIDI: ${midi.join(', ')}` : 'Connect MIDI keyboards and Ableton (IAC)') : MIDI_NOTE}>
-        <span className={`dot ${midi?.length ? 'blue' : 'off'}`} />MIDI
+        <Midi style={{ color: midi?.length ? 'var(--blue)' : undefined }} />MIDI
       </button>
-      <button type="button" className="icon" onClick={onSettings} aria-label="Settings" title={savedAt ? `Settings · saved ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Settings'}>⚙</button>
+      <button type="button" className="icon" onClick={onSettings} aria-label="Settings" title={savedAt ? `Settings (saved at ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : 'Settings'}><Gear /></button>
     </header>
   )
 }

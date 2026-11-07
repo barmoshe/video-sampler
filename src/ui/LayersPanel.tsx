@@ -1,4 +1,5 @@
 import { app } from '../engine/app'
+import { Close } from './icons'
 import { selectorValue, type LayerChain, type MacroParam } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import { noteName } from '../engine/voice-math'
@@ -28,7 +29,7 @@ function Chain({ c, sel, index }: { c: LayerChain; sel: number; index: number })
           <option value="">No clip</option>
           {clips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <button type="button" className="x" aria-label={`Remove layer ${index + 1}`} onClick={() => app.removeLayer(c.id)}>×</button>
+        <button type="button" className="x" aria-label={`Remove layer ${index + 1}`} onClick={() => app.removeLayer(c.id)}><Close size={12} /></button>
       </div>
       <div className="field"><span className="lab">Keys <span className="val">{noteName(c.keyLo)} to {noteName(c.keyHi)}{c.keyFade ? `, fade ${c.keyFade}` : ''}</span></span><ZoneBar lo={c.keyLo} hi={c.keyHi} fade={c.keyFade} /></div>
       <div className="grid2">

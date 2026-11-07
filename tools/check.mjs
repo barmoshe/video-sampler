@@ -443,7 +443,7 @@ try {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id })")
     const seen = []
     for (const mode of ['light', 'dark']) {
-      await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] })
+      await evaluate(`document.documentElement.dataset.theme = '${mode}'`) // the theme is a setting (ADR 0774), light by default
       for (const m of ['play', 'shape', 'mix', 'post']) {
         await click(`.modekey.m-${m}`)
         await sleep(250)
@@ -461,7 +461,7 @@ try {
       await click('.knobs .more')
     }
     const bg = await evaluate("getComputedStyle(document.body).backgroundColor")
-    await page('Emulation.setEmulatedMedia', { features: [] })
+    await evaluate("document.documentElement.dataset.theme = 'light'")
     if (seen.some((x) => x.includes('outside'))) throw new Error(seen.join(', '))
     return `${seen.slice(0, 4).join(', ')} captured in both, beside the timeline; body in dark ${bg}`
   })
