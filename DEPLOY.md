@@ -25,4 +25,7 @@ The `vercel-deploy` skill in `bar_builds` reads this before every deploy. Produc
   `/` serves the VIDAW build (title, Instrument Sans, favicon), `/library/manifest.json` the 26-item pack.
   Behind Vercel Authentication; a share link (expires 2026-11-08 18:14) was handed to Bar. Production is
   unchanged (`9c50d8f`).
-
+- 2026-11-07, `3f1aa2c`, `dpl_GeQEdTBpi1oo1XB2ivh3AWexRLfX`: a **preview** of the design system (ADR 0775:
+  glass panels and capsules over a solid window with the mark's tiles as a wallpaper), on Bar's "Yes, fix
+  the glass". READY in about 10 s; `/` serves the same `index-CfgOm7FW.css` as the build the check passed.
+  Share link until 2026-11-08 19:12. Production is unchanged (`9c50d8f`).
