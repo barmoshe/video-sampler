@@ -38,6 +38,7 @@ OFF, GRAPHITE, ORANGE = "#ECE8DE", "#2B2B30", "#F2621B"
 CAM_DIR = Vector((0.53, -0.85, 0.40)).normalized()   # 3/4 from the front right, about 23 degrees up
 LENS = 70
 TAU = 2 * math.pi
+WASH = 1.0
 
 
 # ---------------------------------------------------------------- sound
@@ -204,30 +205,35 @@ def seg_matrix(p0, p1):
     return Matrix.Translation(p0) @ q.to_matrix().to_4x4(), d.length
 
 
-def lathe_bm(bm, prof, segs=48, M=None, closed=False):
-    """A solid of revolution about z from a profile [(r, z)]; r = 0 ends become poles. closed: stitch last to first."""
+def lathe_bm(bm, prof, segs=48, M=None, closed=False, arc=None):
+    """A solid of revolution about z from a profile [(r, z)]; r = 0 ends become poles. closed: stitch last to first.
+    arc=(a0, a1): only that sweep of angles, with both ends capped (the profile must then be closed)."""
     M = M or Matrix.Identity(4)
+    nv = segs + 1 if arc else segs
+    ang = (lambda j: arc[0] + (arc[1] - arc[0]) * j / segs) if arc else (lambda j: TAU * j / segs)
     rings = []
     for r, z in prof:
         if r < 1e-7: rings.append([bm.verts.new(M @ Vector((0, 0, z)))])
-        else: rings.append([bm.verts.new(M @ Vector((r * math.cos(TAU * j / segs), r * math.sin(TAU * j / segs), z)))
-                            for j in range(segs)])
+        else: rings.append([bm.verts.new(M @ Vector((r * math.cos(ang(j)), r * math.sin(ang(j)), z))) for j in range(nv)])
     n = len(rings)
     pairs = list(zip(range(n - 1), range(1, n))) + ([(n - 1, 0)] if closed else [])
     for a, b_ in pairs:
         A, B = rings[a], rings[b_]
         if len(A) == 1 and len(B) == 1: continue
         for j in range(segs):
-            k = (j + 1) % segs
+            k = j + 1 if arc else (j + 1) % segs
             if len(A) == 1: bm.faces.new((A[0], B[k], B[j]))
             elif len(B) == 1: bm.faces.new((A[j], A[k], B[0]))
             else: bm.faces.new((A[j], A[k], B[k], B[j]))
+    if arc and closed:
+        bm.faces.new([rg[0] for rg in rings][::-1])
+        bm.faces.new([rg[-1] for rg in rings])
     return rings
 
 
-def lathe(name, prof, m=None, segs=48, closed=False, sharp=35, **kw):
+def lathe(name, prof, m=None, segs=48, closed=False, sharp=35, arc=None, **kw):
     me, bm = bpy.data.meshes.new(name), bmesh.new()
-    lathe_bm(bm, prof, segs, None, closed)
+    lathe_bm(bm, prof, segs, None, closed, arc)
     bm.to_mesh(me)
     bm.free()
     return finish(name, me, m, sharp=sharp, **kw)
@@ -412,7 +418,7 @@ class Clip:
 def M():
     """The pack's shared materials, made once per scene."""
     return {
-        "graphite": mat("graphite", GRAPHITE, 0.42, coat=0.15),
+        "graphite": mat("graphite", GRAPHITE, 0.55),
         "graphite_metal": mat("graphite_metal", "#3A3A40", 0.32, 1.0),
         "rubber": mat("rubber", "#232327", 0.75),
         "chrome": mat("chrome", "#E4E4E2", 0.08, 1.0),
@@ -423,6 +429,8 @@ def M():
         "hickory": grain(mat("hickory", "#D3B891", 0.5, coat=0.15), "#D9C29E", "#BFA27A", scale=10, along="Z", across="X", bump=0.02),
         "rattan": grain(mat("rattan", "#CDB58C", 0.55), "#D4BE97", "#B89C70", scale=14, along="Z", across="X", bump=0.02),
         "head": noise_rough(mat("head", "#F4F1EA", 0.6), 0.6, 0.12, 60),
+        "hand": mat("hand", "#303035", 0.62, sheen=0.25),
+        "rawhide": noise_rough(mat("rawhide", "#D9C39C", 0.55, sss=0.05), 0.55, 0.15, 25),
     }
 
 
@@ -582,7 +590,7 @@ def drum(C, mats, name, R, H, shell_mat, hoop_mat, lug_mat, hit_xy, lugs=10, hea
     parts = [shell, top]
     if both_hoops:
         parts.append(lathe(name + "_hoop_bot", hp(hoop_h), hoop_mat, segs=96, closed=True, loc=(0, 0, z0), parent=grp))
-    hd = head(name + "_head", R - 0.001, head_mat or mats["head"], hit_xy, depth=depth, parent=grp, loc=(0, 0, zh + 0.0015))
+    hd = head(name + "_head", R - 0.001, (head_mat or mats["head"]).copy(), hit_xy, depth=depth, parent=grp, loc=(0, 0, zh + 0.0015))
     collar = lathe(name + "_collar", [(R - 0.001, 0), (R + 0.0025, 0), (R + 0.0025, 0.006), (R - 0.001, 0.006)], head_mat or mats["head"],
                    segs=96, closed=True, loc=(0, 0, zh - 0.003), parent=grp)
     parts += [hd, collar]
@@ -625,11 +633,7 @@ def build_cymbal(C, mats, R=0.215, top=0.30, tilt=12.0, mallet_hit=True, name="c
     display_stand(C, mats, top - 0.013)
     piv = empty(name + "_pivot", (0, 0, top), rot=(math.radians(-tilt), 0, math.radians(15)))
     bronze = lathe_marks(mat(name + "_bronze", "#C49C62", 0.24, 1.0))
-    t = lambda r: 0.0026 - 0.0013 * r / R
-    topp = [(0.007, 0.040), (0.025, 0.0395), (0.045, 0.035), (0.058, 0.026), (0.068, 0.018), (0.09, 0.0145),
-            (0.13, 0.0105), (0.17, 0.0065), (0.20, 0.0028), (R, 0.0)]
-    prof = topp + [(r, z - t(r)) for r, z in reversed(topp)]
-    cym = lathe(name, [(r, z - 0.04) for r, z in prof], bronze, segs=128, closed=True, parent=piv, sharp=60)
+    cym = cymbal_mesh(name, R, bronze, parent=piv)
     felt_top = lathe(name + "_felt", cyl_prof(0.012, 0.016), mats["felt"], segs=24, loc=(0, 0, 0.0005), parent=piv)
     wing = lathe(name + "_wing", cyl_prof(0.010, 0.010), mats["graphite_metal"], segs=24, loc=(0, 0, 0.0125), parent=piv)
     felt_bot = lathe(name + "_felt_b", cyl_prof(0.010, 0.016), mats["felt"], segs=24, loc=(0, 0, -0.0128), parent=piv)
@@ -707,21 +711,33 @@ def fit_camera(objs, hfrac=0.60, wfrac=0.52):
     return cam, centre, max(hi - lo), (w, h)
 
 
+# role, azimuth from the camera (deg, + = camera right), elevation, distance x S, size x S, power x key, kelvin
+RIG = [("key", -45, 50, 6.0, 4.0, 1.0, 6300), ("fill", 65, 18, 6.5, 5.0, 0.30, 6600),
+       ("rim", 170, 35, 3.6, 1.2, 0.9, 6500), ("top", 0, 88, 5.0, 5.0, 0.35, 6500)]
+
+
 def studio(C, objs):
+    """The pack's light: big soft sources far from the model (6x its size) so the sweep falls off gently, a
+    soft key from the upper left, a large fill, a thin rim from behind, an overhead, and a spot washing the
+    backdrop so the top of the frame stays off-white. Power from the kit's calibration (looks.KEY_W_PER_M2)."""
     cam, centre, S, wh = fit_camera(objs)
     sw = sweep(centre, S)
-    made = bb.lights("product", objs=objs)
-    for L in made:
-        if hasattr(L.data, "use_shadow_jitter"): L.data.use_shadow_jitter = True   # house numbers, then the pack's balance: a softer key, a lifted fill, a thin rim
-        role = L.name
-        L.data.energy *= {"key": 1.0, "fill": 1.4, "rim": 0.9, "top": 0.6}.get(role, 1.0)
-    # a wash on the backdrop so the top of the frame stays off-white, not grey
+    import looks
+    base = math.atan2(CAM_DIR.y, CAM_DIR.x)
+    for role, az, el, dist, size, pw, k in RIG:
+        d, a_, e_ = dist * S, base + math.radians(az), math.radians(el)
+        li = bpy.data.lights.new(role, "AREA")
+        li.size, li.color, li.energy = size * S, looks.kelvin_rgb(k), looks.KEY_W_PER_M2 * d * d * pw
+        if hasattr(li, "use_shadow_jitter"): li.use_shadow_jitter = True
+        ob = link(bpy.data.objects.new(role, li))
+        ob.location = centre + Vector((math.cos(e_) * math.cos(a_), math.cos(e_) * math.sin(a_), math.sin(e_))) * d
+        bb.look_at(ob, centre)
     c = Vector((CAM_DIR.x, CAM_DIR.y, 0)).normalized()
-    wash = link(bpy.data.objects.new("wash", bpy.data.lights.new("wash", "AREA")))
-    wash.data.size, wash.data.color = 5 * S, (1.0, 1.0, 1.0)
-    wash.location = centre + c * (1.5 * S) + Vector((0, 0, 3.5 * S))
-    target = centre - c * (3.4 * S) + Vector((0, 0, 1.6 * S))
-    wash.data.energy = 18.0 * (wash.location - target).length ** 2 * 0.9
+    wash = link(bpy.data.objects.new("wash", bpy.data.lights.new("wash", "SPOT")))
+    wash.location = centre + c * (2.0 * S) + Vector((0, 0, 5.0 * S))
+    target = centre - c * (4.5 * S) + Vector((0, 0, 3.0 * S))
+    wash.data.spot_size, wash.data.spot_blend, wash.data.shadow_soft_size = math.radians(70), 0.9, S
+    wash.data.energy = 4 * looks.KEY_W_PER_M2 * (wash.location - target).length ** 2 * 0.5 * WASH
     bb.look_at(wash, target)
     bb.world("#ffffff", 0.22)
     return cam, sw, S
@@ -739,9 +755,13 @@ def main():
     ap.add_argument("--frames", default="all")
     ap.add_argument("--views", action="store_true")
     ap.add_argument("--blur", action="store_true")
+    ap.add_argument("--exposure", type=float, default=-1.35)
+    ap.add_argument("--wash", type=float, default=1.0)
     ap.add_argument("--bounces", type=int, default=3)
     ap.add_argument("--engine", default="EEVEE", choices=["CYCLES", "EEVEE"])
     a = ap.parse_args(sys.argv[1:])
+    global WASH
+    WASH = a.wash
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
     env = envelope(os.path.join(a.audio, a.id + ".wav"))
@@ -761,7 +781,7 @@ def main():
     sc.render.use_persistent_data = True
     sc.render.fps = FPS
     sc.render.use_motion_blur = a.blur
-    sc.view_settings.exposure = -0.5
+    sc.view_settings.exposure = a.exposure
     sc.render.motion_blur_shutter = 0.3
 
     C = Clip(a.id, env)

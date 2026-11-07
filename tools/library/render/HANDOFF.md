@@ -1,36 +1,31 @@
-# Pack art (3D clips) — handoff, 2026-11-06 23:22
+# Pack art (3D clips) — handoff, 2026-11-07 00:48
 
 Session: the Blender pack-art side session (no web, no downloads: bpy safety rule, knowledge/33 §33.9).
-Paused a third time on Bar's word ("create handoff and wait"). Nothing committed; only test stills rendered.
+Stopped on Bar's word ("stop for now"). Background render stopped; nothing running.
 
-## Where it stands
+## State right now
 
-- `../video-sampler/tools/library/render/scene.py` (untracked) runs end to end for **marimba, snare and
-  cymbal** (stills, strip, views sheet, `info.json`). Also written but not yet run: vibraphone, xylophone,
-  balafon (shared `bar_instrument`). 20 builders still to write.
-- **Engine decided: EEVEE** (now the default; `--engine CYCLES` still works). Measured: Cycles CPU 20-33 s
-  a frame at 24 spp; EEVEE 64 samples about 2 s a frame after a 13 s first-frame shader compile, with soft
-  contact shadows that look close to Cycles. The whole pack (1,294 frames) is about 45 min.
-- Defaults now: 64 samples, motion blur **off** (`--blur` turns it on; EEVEE ghosted the mallet on the
-  rebound frame), exposure -0.5, a neutral backdrop wash light, world 0.22.
-- Strikers: graphite shafts, orange heads/tips (pale hickory vanished on the sweep). Framing uses the
-  instrument + the striker's head only, so shafts may leave the frame. Rebound angle 12°.
-- Glow: radius about L × 0.13 (bars), 0.06 (snare head), 0.07 (cymbal); gain about 2.2-2.5.
-- Bar instruments are lower now (short thick legs, short resonators). Snare shell is black nickel.
-- Render scratch: `/private/tmp/claude-501/-Users-barmoshe-bar-builds/fd550047-3bc7-412b-b9af-b3a34b6a37d7/scratchpad/render/`
-  (`r2/` and `r3/` per sound: `f0000.png`, `strip.png`, `views.png`). Not `video-sampler/tools/out/`,
-  which something else clears.
+- **scene.py does not run as it stands:** `build_cymbal` now calls `cymbal_mesh(name, R, bronze, parent=piv)`,
+  which is not written yet (I was mid-way through adding the shared helpers). Write it first: the cymbal
+  profile that used to be inline (top points (0.007,0.040) ... (R,0.0), thickness 0.0026 - 0.0013 r/R,
+  closed lathe, z shifted by -0.04, segs 128, sharp 60), scaled for R, so the hi-hat can reuse it.
+- Added and untested: `lathe(..., arc=(a0, a1))` (a capped partial lathe, for the tambourine's slots),
+  each drum head gets its own material copy (glow is in object space), shared materials `hand` and `rawhide`.
+- **Light and exposure solved (round 4):** the kit's `product` rig sat 2.5x the model's size away and
+  burned the floor; it is replaced by `RIG` in `studio()`: big soft area lights at about 6x the size
+  (key upper left, fill, thin rim, overhead) plus a spot washing the backdrop, near-neutral 6300-6600 K.
+  At exposure -1.6 the top of the frame measures `#ECE8DD` (target `#ECE8DE`); the default is now -1.35 so
+  the foreground floor is not grey. New flags: `--exposure`, `--wash`. Snare at -1.6 looks like a real
+  product shot (`scratchpad/render/r4/snare-rig-1.6/f0000.png`).
+- Round 3 verdict: marimba, snare and cymbal all read well; display-stand base was reflecting white,
+  now matte graphite (roughness 0.55, no coat).
 
-## Round 3: rendered, not yet looked at
+## Open problem: full-clip speed
 
-Rendered just before the pause; the pictures have not been Read. One number came back: the floor still
-samples about `#FBF5E9` (top of frame `#DDD7CC`-`#F7F2E7`), so -0.5 exposure barely moved it; the target is
-`#ECE8DE`. Next look: lower the light powers themselves (the `studio()` multipliers, the wash at 0.9) or
-exposure about -1.0, and check the sweep's warmth (lights are 5600 K).
-
-Round 2 notes, still true until round 3 is checked: cymbal reads well (wobble and edge glow visible);
-snare looked like a pale ghost (fixed by the dark shell?); the marimba bar was small in frame (fixed by
-framing on the mallet head only?).
+Stills render at about 2 s a frame in EEVEE, but the full snare clip (`render(animation=True)`) took
+21-36 s a frame (14 of 27 frames done when stopped). Suspects: animation mode re-syncs or recompiles the
+materials with keyed node values every frame, or the GPU was busy. Try first: render the clip as a loop of
+`frame_set(f)` + `bb.render(...)` (the stills path, which measured 2 s), and time it.
 
 ## Next steps
 
