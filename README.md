@@ -1,8 +1,9 @@
-# video-sampler
+# VIDAW
 
-Play a video like an instrument. Every key plays the clip at its own pitch, picture and sound
-together: a higher note sings higher and moves faster. Every note you hold joins the picture, so a
-chord is a collage. Record a take and export it as an MP4 for Reels, TikTok or YouTube.
+A video DAW in the browser. Every key plays a clip at its own pitch, picture and sound together: a
+higher note sings higher and moves faster. Every track is a tile in a live split screen, so a song is
+a music video as you make it. Jam on the board, arrange on the timeline, and export the song as one
+MP4 for Reels, TikTok or YouTube.
 
 Nothing is uploaded. Your clips stay in your browser.
 
@@ -21,20 +22,25 @@ Home grid. Tiles slide on springs and never jump; a fast trill does not shuffle 
 
 ## The screen
 
-One instrument: the stage on top, a deck below. The deck has four mode keys (Option+1 to 4):
+The stage on the left, the song on the right, a deck below.
 
-- **Play**: the keys or the pads with the clips' pictures, scale and chords, the strip of sounds.
-- **Shape**: the selected clip's frames over its waveform (region, loop, slices), a pad's sound and
-  how it plays, or the layers with their key and morph zones.
-- **Loop**: the loop board. Each column is a section with its own main video and layers, launched
-  on the next bar; each cell is a recorded layer that loops as its own tile.
-- **Post**: the takes, their timeline, the shape (9:16 with the apps' safe zones, 16:9, 1:1), the
-  layout, the look of the tiles, and Export.
+- **The song** has two views of the same tracks (Tab switches). The **board**: tracks as rows, scenes
+  as columns, each cell a loop; a scene launches on the next bar, and an empty cell records live, pass
+  after pass. The **timeline**: the song on bars; drag a clip to move it, its right edge to stretch it;
+  scenes go onto it with "Add to song".
+- **Tracks** come in four kinds: instrument (a Clip, Pads or Layers instrument and its notes), video
+  (takes of yourself filmed along the song, played as recorded), backing (a video or song under
+  everything) and picture (cues that change the layout and the look over time).
+- **Each track is a tile.** The stage is laid out by track first, side by side on a landscape frame and
+  stacked on a portrait one, and a track's notes flash inside its own region.
+- **The deck** has four modes (Option+1 to 4): **Play** (the selected track's keys or pads, scale and
+  chords, the strip of sounds), **Shape** (the sample editor, or a picked clip's notes in a piano roll),
+  **Mix** (a strip under each track's tile: fader, pan, mute, solo) and **Post** (takes, the shape with
+  the apps' safe zones, the layouts, the look, and Export).
 
-Eight knobs on the right always follow what you touched last, in pages (Quick, Voice, Filter,
-Motion, Space for the Clip; others for pads, layers, the transport and the look). Their colour says
-what they change (orange the tone, blue time, graphite space, violet the picture), and the value
-pops up over the stage while you turn, with what the picture does. **More** opens every setting.
+Eight knobs on the right follow what you touched last, in pages, and light up in the selected track's
+colour; the value pops up over the stage while you turn, with what the picture does. **More** opens
+every setting. Light by default; dark (or like your Mac) in Settings.
 
 ## Play it
 

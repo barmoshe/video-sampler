@@ -1,6 +1,17 @@
 # video-sampler, STATUS
 
-- Updated: 2026-11-06 night (after Bar's "keep going do your best")
+- Updated: 2026-11-07 evening (session close-out on Bar's word)
+
+## Now (read this first)
+
+The app is **VIDAW**, a video DAW (ADRs 0772, 0773, 0774 in the workshop). On `main`: the song model
+(tracks of four kinds, board and timeline, each track a tile, song export) and the first brand pass
+(Ableton's discipline, the split-screen mark, light by default), **awaiting Bar's review**. Gates: tsc,
+oxlint (zero warnings), 65 unit tests, build, and `node tools/check.mjs` 29 / 29 in light and dark;
+CI green on `07d87d1`. Production still serves the v1 demo build `9c50d8f`; nothing newer is deployed.
+The full picture, open items and questions: `bar_builds/lab/video-sampler/HANDOFF.md`.
+
+## History (v1, kept for the record)
 
 ## Where it landed
 
