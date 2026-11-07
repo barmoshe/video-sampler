@@ -21,3 +21,7 @@ export const Library = (p: P) => <Svg {...p}><rect x="2" y="2" width="5" height=
 export const Midi = (p: P) => <Svg {...p}><circle cx="8" cy="8" r="6" /><circle cx="5" cy="8" r=".6" fill="currentColor" /><circle cx="11" cy="8" r=".6" fill="currentColor" /><circle cx="8" cy="5" r=".6" fill="currentColor" /><circle cx="6" cy="5.9" r=".6" fill="currentColor" /><circle cx="10" cy="5.9" r=".6" fill="currentColor" /></Svg>
 export const Expand = (p: P) => <Svg {...p}><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" /></Svg>
 export const Export = (p: P) => <Svg {...p}><path d="M8 10V2.5M5 5.5l3-3 3 3" /><path d="M2.5 9.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" /></Svg>
+export const SidebarLeft = (p: P) => <Svg {...p}><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2" /><path d="M6 2.8v10.4" /></Svg>
+export const SidebarRight = (p: P) => <Svg {...p}><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2" /><path d="M10 2.8v10.4" /></Svg>
+export const Takes = (p: P) => <Svg {...p}><rect x="2" y="4.5" width="9.5" height="9" rx="1.5" /><path d="M4.5 2.5H13a1 1 0 0 1 1 1v7.5" /></Svg>
+export const Keys = (p: P) => <Svg {...p}><rect x="1.5" y="4" width="13" height="8.5" rx="1.5" /><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M4.5 9.8h7" /></Svg>

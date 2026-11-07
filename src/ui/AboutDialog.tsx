@@ -7,9 +7,10 @@ const CODE: [string, string, string][] = [
   ['React', 'MIT', 'https://github.com/facebook/react'],
 ]
 const KEYS: [string, string][] = [
+  ['M', 'the computer keyboard plays notes, or not (as in Live)'],
   ["A to '", 'play the keys (Z X octave, C V velocity)'], ['Z X C V, A S D F, Q W E R, 1 2 3 4', 'the pads, bottom row first'],
-  ['Space', 'sustain'], ['↑ ↓', 'pitch bend'], ['Enter', 'record a take'], ['Shift+Enter', 'capture what you just played'],
-  ['`', 'record a loop layer'], ['1 to 8', 'go to a section (Clip and Layers)'], ['Option+1 to 4', 'Play, Shape, Loop, Post'], ['⌘Z, ⇧⌘Z', 'undo, redo'],
+  ['Space', 'play or stop the song'], ['Tab', 'the board or the timeline'], ['↑ ↓', 'pitch bend'], ['Enter or `', 'record into the song'], ['Shift+Enter', 'capture what you just played as a take'],
+  ['1 to 8', 'launch a scene (Clip and Layers)'], ['Option+1, 2, 3', 'show or hide the library, the inspector, the song'], ['Option+4', 'the stage alone'], ['⌘Z, ⇧⌘Z', 'undo, redo'],
 ]
 const FONTS: [string, string][] = [['Instrument Sans', 'SIL Open Font License 1.1']]
 

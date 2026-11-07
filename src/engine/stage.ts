@@ -51,6 +51,8 @@ export class Stage {
   readonly collage: Collage
   layout = new LayoutEngine()
   inner = new Map<string, LayoutEngine>() // one per track, for its notes inside its region
+  /** Where each track's tile is on the stage (0-1 of the frame), so the window can name it on the picture. */
+  regions = new Map<string, { x: number; y: number; w: number; h: number }>()
   private lastT = 0
   private held = new Map<string, { clipId: string; q: number; seen: number; order: number }>() // looper layer tiles
 
@@ -180,7 +182,10 @@ export class Stage {
         for (const [k, ir] of inner) rects.set(k, { x: ir.x + r.x + ox, y: ir.y + r.y + oy, w: ir.w, h: ir.h })
       }
       for (const id of this.inner.keys()) if (!info.has(id)) this.inner.delete(id)
+      this.regions = new Map()
+      for (const id of byTrack.keys()) { const r = outer.get(`T:${id}`); if (r && info.has(id)) this.regions.set(id, { x: (r.x + ox) / W, y: (r.y + oy) / H, w: r.w / W, h: r.h / H }) }
     } else {
+      this.regions = new Map()
       const raw = this.layout.update(o.mode, cellList, IW, IH, firstAspect, now, dt || 1 / dispFps)
       rects = ox === 0 && oy === 0 ? raw : new Map([...raw].map(([k, r]) => [k, { x: r.x + ox, y: r.y + oy, w: r.w, h: r.h }]))
     }

@@ -78,6 +78,7 @@ export interface AppState {
   canRedo: boolean
   look: Look // how tiles are framed (POST mode's looks)
   starting: boolean // the first visit's instrument is loading
+  keysOn: boolean // the computer keyboard plays notes (Live's Computer MIDI Keyboard: M or the toolbar's button)
 }
 
 /** The returns' picture twins, from the bus settings (stage.ts). */
@@ -86,7 +87,7 @@ export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx,
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
 const UNDO_KEYS = ['kind', 'clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'tracks', 'sel', 'scenes', 'marks', 'trackLayout', 'fx', 'take', 'takes', 'look'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
-const SAVE_KEYS = [...UNDO_KEYS, 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay', 'view', 'pos'] as const
+const SAVE_KEYS = [...UNDO_KEYS, 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay', 'view', 'pos', 'keysOn'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
 const pick = <K extends keyof AppState>(s: AppState, keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, s[k]])) as Pick<AppState, K>
 
@@ -101,7 +102,7 @@ const initial = (): AppState => ({
   padPlay: { repeat: false, rate: 0.25, swing: 0, levels: false },
   active: [], recording: false, take: null, takes: [], playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
-  savedAt: null, canUndo: false, canRedo: false, look: CLEAN_LOOK, starting: false,
+  savedAt: null, canUndo: false, canRedo: false, look: CLEAN_LOOK, starting: false, keysOn: true,
 })
 
 export class App {
@@ -358,28 +359,6 @@ export class App {
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
     if (Math.random() < 0.02) this.book.prune(this.ctx.currentTime)
-    this.ambientFrame(now, n)
-  }
-
-  // ---------- the ambient backdrop (ADR 0775): the stage, tiny and soft, behind the glass ---------
-  private ambient: CanvasRenderingContext2D | null = null
-  private ambientAt = 0
-  private idleImg: HTMLImageElement | null = null
-  attachAmbient(canvas: HTMLCanvasElement) { this.ambient = canvas.getContext('2d', { alpha: false }); return () => { this.ambient = null } }
-  /** About fifteen times a second: copy the stage (right after it drew, while its pixels are there), or
-   *  the selected clip's frame when nothing sounds, into the 48×27 backdrop the CSS spreads and softens. */
-  private ambientFrame(now: number, sounding: number) {
-    const g = this.ambient
-    if (!g || !this.stage || now - this.ambientAt < 66) return
-    this.ambientAt = now
-    const { width: w, height: h } = g.canvas
-    if (sounding > 0) { g.drawImage(this.stage.canvas, 0, 0, w, h); return }
-    const s = this.store.get()
-    const id = s.kind === 'pads' ? s.pads.chains.find((c) => c.note === s.pads.selected)?.clipId : s.kind === 'layers' ? s.layers.chains[0]?.clipId : s.clip.clipId
-    const thumb = s.clips.find((c) => c.id === id)?.thumb
-    if (!thumb) return
-    if (this.idleImg?.src !== thumb) { this.idleImg = new Image(); this.idleImg.src = thumb }
-    if (this.idleImg.complete && this.idleImg.naturalWidth) g.drawImage(this.idleImg, 0, 0, w, h)
   }
 
   bankBase() { return PAD_BASE + this.store.get().pads.bank * 16 }
@@ -475,9 +454,19 @@ export class App {
         capture: () => this.capture(),
         loopRecord: () => this.songRecord(),
         section: (i: number) => { const sc = this.store.get().scenes[i]; if (sc) this.launchScene(sc.id) },
+        keys: () => this.store.get().keysOn,
+        toggleKeys: () => this.setKeys(!this.store.get().keysOn),
+        transport: () => { const x = this.store.get(); if (x.songOn) this.songStop(); else this.songStart(x.view) },
       }
     })
     return () => { detach(); removeEventListener('keydown', undoKeys) }
+  }
+
+  /** The computer keyboard as a MIDI keyboard, on or off (Live's M). Off, the letters are free. */
+  setKeys(on: boolean) {
+    if (!on) this.panic()
+    this.store.set({ keysOn: on })
+    this.say(on ? 'The computer keyboard plays notes (M turns it off)' : 'The computer keyboard is off (M turns it on)')
   }
 
   async connectMidi() {

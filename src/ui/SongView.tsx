@@ -78,6 +78,17 @@ function AddRow() {
   )
 }
 
+/** A scene's picture: the frames its tracks play, side by side, the way the stage will split them. */
+function ScenePoster({ scene, tracks }: { scene: string; tracks: Track[] }) {
+  const clips = useStore(app.store, (x) => x.clips)
+  const shots = tracks.filter((t) => t.kind !== 'picture' && t.cells[scene]).map((t) => ({ t, th: trackThumb(t, clips, t.cells[scene]) })).filter((x) => x.th)
+  return (
+    <span className="poster" aria-hidden="true">
+      {shots.length ? shots.slice(0, 4).map(({ t, th }) => <i key={t.id} style={{ background: `${rgb(th!.poster)} url(${th!.thumb}) center / cover`, ['--h' as string]: trackColor(t) }} />) : <em>empty</em>}
+    </span>
+  )
+}
+
 /** The board: tracks as rows, scenes as columns, each cell a loop. A scene launches on the next bar. */
 function Board({ tracks }: { tracks: Track[] }) {
   const scenes = useStore(app.store, (x) => x.scenes), sceneOn = useStore(app.store, (x) => x.sceneOn), queued = useStore(app.store, (x) => x.queuedScene)
@@ -88,11 +99,11 @@ function Board({ tracks }: { tracks: Track[] }) {
   const beat = useStore(app.clock, (c) => c.beat)
   const songOn = useStore(app.store, (x) => x.songOn)
   return (
-    <section className="board2" aria-label="The board: tracks and scenes" style={{ gridTemplateColumns: `180px repeat(${s.scenes.length}, 118px) 70px` }}>
+    <section className="board2" aria-label="The board: tracks and scenes" style={{ gridTemplateColumns: `180px repeat(${s.scenes.length}, 124px) 70px` }}>
       <div className="corner"><AddTrack /></div>
       {s.scenes.map((sc, i) => (
         <div key={sc.id} className={`scene ${s.sceneOn === sc.id && songOn === 'board' ? 'on' : ''} ${s.queued === sc.id ? 'queued' : ''}`}>
-          <button type="button" className="launch2" onClick={() => app.launchScene(sc.id)} title={`Play scene ${sc.name} (key ${i + 1}); while the board plays it starts on the next bar`}><Play size={11} /><b>{sc.name}</b></button>
+          <button type="button" className="launch2" onClick={() => app.launchScene(sc.id)} title={`Play scene ${sc.name} (key ${i + 1}); while the board plays it starts on the next bar`}><ScenePoster scene={sc.id} tracks={tracks} /><span className="sname"><Play size={10} /><b>{sc.name}</b></span></button>
           <button type="button" className="place" onClick={() => app.placeScene(sc.id)} title={`Put scene ${sc.name} on the timeline, at the song's end`}>Add to song</button>
         </div>
       ))}
@@ -109,7 +120,7 @@ function Board({ tracks }: { tracks: Track[] }) {
             return (
               <div key={sc.id} className={`bcell ${c ? 'full' : ''} ${picked ? 'picked' : ''} ${playing ? 'playing' : ''} ${rec ? 'rec' : ''}`} style={{ ['--h' as string]: hue(t), ['--hl' as string]: hue(t, 55, 0.16) }}>
                 <button type="button" className="cellbtn"
-                  onClick={() => { if (t.kind === 'instrument' || t.kind === 'video') app.selectTrack(t.id); ui.set({ pick: c ? { track: t.id, scene: sc.id } : null }) }}
+                  onClick={() => { if (t.kind === 'instrument' || t.kind === 'video') app.selectTrack(t.id); ui.set({ pick: c ? { track: t.id, scene: sc.id } : null, picture: false }) }}
                   onDoubleClick={() => { if (!c && (t.kind === 'instrument' || t.kind === 'video')) { app.selectTrack(t.id); app.store.set({ view: 'board' }); app.launchScene(sc.id); if (!app.store.get().songRec) app.songRecord() } }}
                   title={c ? `${t.name}, scene ${sc.name}: ${c.len / 4} bar${c.len === 4 ? '' : 's'}${c.notes.length ? `, ${c.notes.length} notes` : ''}` : t.kind === 'instrument' || t.kind === 'video' ? `Empty: double-click to record ${t.name} into scene ${sc.name}` : 'Empty'}
                   aria-label={c ? `${t.name}, scene ${sc.name}` : `${t.name}, scene ${sc.name}, empty`}>
@@ -183,7 +194,7 @@ function Timeline({ tracks }: { tracks: Track[] }) {
                     onPointerDown={(e) => {
                       e.stopPropagation()
                       if (t.kind === 'instrument' || t.kind === 'video') app.selectTrack(t.id)
-                      ui.set({ pick: { track: t.id, clip: c.id } as Pick })
+                      ui.set({ pick: { track: t.id, clip: c.id } as Pick, picture: false })
                       const edge = e.clientX > e.currentTarget.getBoundingClientRect().right - 8
                       drag.current = { track: t.id, id: c.id, mode: edge ? 'len' : 'move', x: e.clientX, start: c.start, len: c.len }
                       e.currentTarget.setPointerCapture(e.pointerId)
@@ -219,7 +230,6 @@ export function SongView() {
   const view = useStore(app.store, (s) => s.view)
   const shown = useSongTracks()
   const ppb = useStore(ui, (u) => u.ppb)
-  const pick = useStore(ui, (u) => u.pick)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
@@ -247,9 +257,8 @@ export function SongView() {
           <button type="button" aria-pressed={view === 'board'} onClick={() => app.store.set({ view: 'board' })} title="Jam: scenes of loops (Tab)">Board</button>
           <button type="button" aria-pressed={view === 'timeline'} onClick={() => app.store.set({ view: 'timeline' })} title="Arrange: the song on bars (Tab)">Timeline</button>
         </fieldset>
-        <span className="hint">{view === 'board' ? 'Double-click an empty cell to record into it. Play a scene from its name; Add to song puts it on the timeline.' : 'Click the ruler to move the playhead; double-click a lane for a new clip; Delete removes, ⌘D duplicates.'}</span>
+        <span className="hint">{view === 'board' ? <>Double-click an empty cell to record into it; a scene's picture plays it. <b>Tab</b> for the timeline</> : <>Double-click a lane for a clip; <b>Delete</b> removes, <b>⌘D</b> duplicates. <b>Tab</b> for the board</>}</span>
         {view === 'timeline' && <label className="zoom" title="Zoom">− <input type="range" min={8} max={64} value={ppb} onChange={(e) => ui.set({ ppb: Number(e.target.value) })} aria-label="Zoom" /> +</label>}
-        {pick && <button type="button" className="btn sm" onClick={() => ui.set({ pick: null })}>Deselect</button>}
       </header>
       {view === 'board' ? <Board tracks={shown} /> : <Timeline tracks={shown} />}
     </section>

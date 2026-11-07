@@ -5,7 +5,7 @@ import { clipRoot, homeKey, sliceTimes, type ClipParams, type LayerChain, type T
 import { useStore } from '../engine/store'
 import { noteName } from '../engine/voice-math'
 import { rgb } from './format'
-import { PadGrid } from './PadGrid'
+import { Banks, PadGrid } from './PadGrid'
 import { SampleEditor } from './SampleEditor'
 import { ui } from './ui'
 
@@ -25,7 +25,7 @@ function ShapeClip() {
   const p = useStore(app.store, (s) => s.clip)
   const clip = useStore(app.store, (s) => s.clips.find((c) => c.id === s.clip.clipId) ?? null)
   const set = (x: Partial<ClipParams>) => app.setClip(x)
-  if (!clip) return <p className="muted pad">Pick a sound in Play, or drop a video on the stage.</p>
+  if (!clip) return <p className="muted pad">Pick a sound in the Library, or drop a video on the stage.</p>
   const home = p.mode !== 'slice' ? noteName(homeKey(p, clip)) : null
   return (
     <div className="shape-clip">
@@ -59,14 +59,14 @@ function ShapePads() {
   const set = (x: Parameters<typeof app.setPad>[1]) => app.setPad(pads.selected, x)
   return (
     <div className="shape-pads">
-      <div className="mini-pads"><PadGrid play={false} /></div>
+      <div className="mini-pads"><PadGrid /><Banks /></div>
       <div className="padinfo">
         <input ref={file} type="file" accept="video/*" hidden onChange={(e) => { if (e.target.files?.length) void app.importFiles([e.target.files[0]], { pad: pads.selected }); e.target.value = '' }} />
         <div className="padhead">
           {clip ? <img className="thumb big" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} /> : <span className="thumb big" />}
           <div>
             <b>Pad {noteName(pads.selected)}</b>
-            <span className="muted">{clip ? `${clip.name}, ${clip.duration.toFixed(2)} s` : 'Empty: pick a sound in Play, or load a video'}</span>
+            <span className="muted">{clip ? `${clip.name}, ${clip.duration.toFixed(2)} s` : 'Empty: pick a sound in the Library, or load a video'}</span>
           </div>
           <button type="button" className="btn sm" onClick={() => file.current?.click()}>Load a video</button>
           {sel?.clipId && <button type="button" className="btn sm" onClick={() => set({ clipId: null })}>Clear</button>}
@@ -109,7 +109,7 @@ function ShapeLayers() {
     const clip = clips.find((x) => x.id === c.clipId)
     return (
       <div key={c.id} className={`lrow ${c.id === selId ? 'sel' : ''}`}>
-        <button type="button" className="lpick" aria-pressed={c.id === selId} onClick={() => { ui.set({ layer: c.id, page: { ...ui.get().page, 'shape:layers': 'layer' } }) }} aria-label={`Layer ${i + 1}`}>
+        <button type="button" className="lpick" aria-pressed={c.id === selId} onClick={() => { ui.set({ layer: c.id, page: { ...ui.get().page, layers: 'layer' } }) }} aria-label={`Layer ${i + 1}`}>
           {clip ? <img className="thumb" src={clip.thumb} alt="" style={{ background: rgb(clip.poster) }} /> : <span className="thumb" />}
           <span>{i + 1}</span>
         </button>
@@ -137,7 +137,8 @@ function ShapeLayers() {
   )
 }
 
-export function ShapeMode() {
+/** The selected instrument's own editor in the inspector: the Clip's sample, the pads, or the layers. */
+export function InstrumentDetail() {
   const kind = useStore(app.store, (s) => s.kind)
-  return <div className="mode-body shape">{kind === 'pads' ? <ShapePads /> : kind === 'layers' ? <ShapeLayers /> : <ShapeClip />}</div>
+  return <div className="detail">{kind === 'pads' ? <ShapePads /> : kind === 'layers' ? <ShapeLayers /> : <ShapeClip />}</div>
 }

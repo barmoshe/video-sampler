@@ -4,15 +4,16 @@
 
 ## Now (read this first)
 
-The app is **VIDAW**, a video DAW (ADRs 0772-0775 in the workshop). On `main`: the song model
-(tracks of four kinds, board and timeline, each track a tile, song export), the brand (Ableton's
-discipline, the split-screen mark, light by default) and the design system of ADR 0775: a macOS Tahoe pro
-app in Liquid Glass. The window is not glass (a solid colour with the mark's three tiles as a sharp
-wallpaper; Settings offers Plain); the song, the deck and the inspector are thick glass panels, the
-toolbar's capsules and the video's overlays thinner glass with a lens at the rim; system font, Apple's
-macOS sizes, a fixed track palette, a glass app icon. **Awaiting Bar's review.** Gates: tsc, oxlint (zero
-warnings), 65 unit tests, build, and `node tools/check.mjs` 29 / 29 in light and dark with no console
-errors. Production still serves the v1 demo build `9c50d8f`; previews in `DEPLOY.md`.
+The app is **VIDAW**, a video DAW (ADRs 0772-0776 in the workshop). On `main`: the song model (tracks of
+four kinds, board and timeline, each track a tile, song export), the brand pass, and the window of ADR 0776,
+"the picture is the desk": the stage in the middle (a dark viewer, the biggest region); the library (sounds
+as pictures) on the left, the inspector (whatever is selected) on the right, the song (board or timeline,
+Tab) under the stage; each pane hides (Option+1, 2, 3; Option+4 the stage alone). No modes and no keys on
+screen: M turns the computer keyboard on and off and Space plays and stops, as in Live. Each track's tile
+is named on the picture and selects the track. **Awaiting Bar's review; Bar has also asked for a restyle
+(less rounded, VIDAW's own design and brand), not started.** Gates: tsc, oxlint (zero warnings), 65 unit
+tests, build; `node tools/check.mjs` 28 / 29 on the last full run (the chord step read 1 tile at 600 ms on a
+freshly imported clip; open). Deploys in `DEPLOY.md`.
 The full picture, open items and questions: `bar_builds/lab/video-sampler/HANDOFF.md`.
 
 ## History (v1, kept for the record)

@@ -1,16 +1,8 @@
-// The shell's own state (ADR 0772): which mode the deck is in, which knob page, the "More" sheet, and
-// the value that pops up over the stage while a knob turns. Views only: not in undo or the project.
+// The window's own state (ADR 0776): which panes show around the stage, which knob page, what is picked
+// in the song, and the value that pops up over the stage while a knob turns. Views only: not in undo or
+// the project.
 import { createStore } from '../engine/store'
 import type { InstrumentKind } from '../engine/types'
-
-export type DeckMode = 'play' | 'shape' | 'mix' | 'post'
-export const MODES: [DeckMode, string, string][] = [
-  ['play', 'Play', 'keys, pads'],
-  ['shape', 'Shape', 'sound, picture'],
-  ['mix', 'Mix', 'tracks, faders'],
-  ['post', 'Post', 'look, export'],
-]
-
 
 export const INSTRUMENTS: [InstrumentKind, string, string][] = [
   ['clip', 'Clip', 'One clip across the keys, at every pitch'],
@@ -19,26 +11,35 @@ export const INSTRUMENTS: [InstrumentKind, string, string][] = [
 ]
 
 export interface Hud { label: string; value: string; hint?: string; at: number }
+/** The panes around the stage (the stage itself never hides): Option+1, 2 and 3 toggle them. */
+export interface Panes { lib: boolean; insp: boolean; song: boolean }
 export interface UiState {
-  mode: DeckMode
-  page: Partial<Record<string, string>> // knob page per mode and instrument ("play:clip" → "filter")
-  sheet: boolean // the full editor over the stage
+  panes: Panes
+  page: Partial<Record<string, string>> // knob page per instrument ("clip" → "filter")
   layer: string | null // the Layers instrument's selected layer (the knobs follow it)
   hud: Hud | null
   coach: boolean // the first-visit hint on the stage
-  safe: boolean // POST: show where the apps put their buttons over a 9:16 frame
-  pick: Pick | null // the clip selected on the board or the timeline (SHAPE edits its notes)
+  safe: boolean // show where the apps put their buttons over a 9:16 frame
+  pick: Pick | null // the clip selected on the board or the timeline (the inspector edits its notes)
   ppb: number // the timeline's zoom: pixels a beat
-  big: boolean // the stage takes the song view's room
+  big: boolean // the stage alone: every pane steps aside
+  picture: boolean // the picture itself is selected (the inspector shows its layout and look)
 }
 /** A selected clip: a board cell (track × scene) or a timeline clip (track, clip id). */
 export type Pick = { track: string; scene: string; clip?: undefined } | { track: string; clip: string; scene?: undefined }
 
-const remembered = (): DeckMode => {
-  try { const m = localStorage.getItem('vs.mode'); return m === 'shape' || m === 'mix' || m === 'post' ? m : 'play' } catch { return 'play' }
+const panes = (): Panes => {
+  try { const p = JSON.parse(localStorage.getItem('vs.panes') ?? '{}'); return { lib: p.lib !== false, insp: p.insp !== false, song: p.song !== false } } catch { return { lib: true, insp: true, song: true } }
 }
 
-export const ui = createStore<UiState>({ mode: remembered(), page: {}, sheet: false, layer: null, hud: null, coach: true, safe: true, pick: null, ppb: 22, big: false })
+export const ui = createStore<UiState>({ panes: panes(), page: {}, layer: null, hud: null, coach: true, safe: true, pick: null, ppb: 22, big: false, picture: false })
+
+/** Show or hide a pane around the stage; remembered per browser. */
+export function togglePane(k: keyof Panes) {
+  const p = { ...ui.get().panes, [k]: !ui.get().panes[k] }
+  ui.set({ panes: p, big: false })
+  try { localStorage.setItem('vs.panes', JSON.stringify(p)) } catch { /* a private window: the panes just aren't remembered */ }
+}
 
 export type Theme = 'light' | 'dark' | 'system'
 /** Light by default (ADR 0774); dark, or the system's choice, from Settings. Remembered per browser. */
@@ -58,11 +59,6 @@ export function wall(): Wall {
 export function setWall(w: Wall) {
   document.documentElement.dataset.wall = w
   try { localStorage.setItem('vs.wall', w) } catch { /* a private window: the wallpaper just isn't remembered */ }
-}
-
-export function setMode(mode: DeckMode) {
-  ui.set({ mode, sheet: false })
-  try { localStorage.setItem('vs.mode', mode) } catch { /* private window: the mode just isn't remembered */ }
 }
 
 /** Show a value over the stage for a moment (OP-1 style), with what the picture does. */

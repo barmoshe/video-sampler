@@ -35,6 +35,9 @@ export interface KeyContext {
   loopRecord?(): void
   section?(index: number): void
   capture?(): void
+  keys(): boolean // the computer keyboard plays notes (Live's Computer MIDI Keyboard)
+  toggleKeys(): void
+  transport?(): void
 }
 
 const typing = (e: KeyboardEvent) => {
@@ -49,7 +52,10 @@ export function attachKeyboard(h: InputHandlers, ctx: () => KeyContext): () => v
     const k = ctx()
     if (e.code === 'Enter') { if (e.shiftKey) k.capture?.(); else k.record(); e.preventDefault(); return }
     if (e.code === 'Backquote') { k.loopRecord?.(); e.preventDefault(); return }
-    if (e.code === 'Space') { h.sustain(true, e.timeStamp); e.preventDefault(); return }
+    // Space plays and stops the song, M turns the computer keyboard on and off (both as in Live)
+    if (e.code === 'Space') { k.transport?.(); e.preventDefault(); return }
+    if (e.code === 'KeyM' && !e.shiftKey) { k.toggleKeys(); e.preventDefault(); return }
+    if (!k.keys()) return
     if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { h.bend(e.code === 'ArrowUp' ? 1 : -1, e.timeStamp); e.preventDefault(); return }
     let note: number | null = null
     if (k.mode === 'pads') {
@@ -73,7 +79,6 @@ export function attachKeyboard(h: InputHandlers, ctx: () => KeyContext): () => v
     h.noteOn(note, e.shiftKey ? 127 : k.velocity(), e.timeStamp, 'keys')
   }
   const onUp = (e: KeyboardEvent) => {
-    if (e.code === 'Space') { h.sustain(false, e.timeStamp); return }
     if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { h.bend(0, e.timeStamp); return }
     const note = down.get(e.code)
     if (note === undefined) return

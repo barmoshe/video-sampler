@@ -9,8 +9,8 @@ import { rgb } from './format'
 const ORDER = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
 
 /**
- * The 4×4 pads with their clips' pictures: press to play, drop videos to load (several fill upward),
- * drag onto another pad to swap, Alt-drag to layer. `play={false}` only selects (SHAPE mode).
+ * The 4×4 pads with their clips' pictures (the inspector): press to play and select, drop videos to load
+ * (several fill upward), drag onto another pad to swap, Alt-drag to layer. `play={false}` only selects.
  */
 export function PadGrid({ play = true }: { play?: boolean }) {
   const pads = useStore(app.store, (s) => s.pads)

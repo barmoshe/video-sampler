@@ -160,27 +160,30 @@ function layerPages(s: AppState, u: UiState): Page[] {
   ]
 }
 
-function mixPages(s: AppState): Page[] {
-  const tr = s.transport, t = s.tracks.find((x) => x.id === s.sel), m = t?.mix
-  const sends = s.kind === 'clip' ? s.clip.sends : s.kind === 'layers' ? s.layers.sends : s.pads.chains.find((c) => c.note === s.pads.selected)?.sends
-  const setSends = (x: Sends) => (s.kind === 'clip' ? app.setClip({ sends: x }) : s.kind === 'layers' ? app.setLayers({ sends: x }) : app.setPad(s.pads.selected, { sends: x }))
+/** The song's own settings, the last page wherever the knobs are. */
+function songPage(s: AppState): Page {
+  const tr = s.transport
+  return { id: 'song', name: 'Song', knobs: [
+    { label: 'Tempo', value: tr.bpm, min: 40, max: 240, format: (v) => `${v} BPM`, set: (bpm) => app.setTransport({ bpm }), tone: 'time', hint: 'the delay follows', off: !!s.songOn },
+    { label: 'Beats', value: tr.beats, min: 2, max: 7, format: (v) => `${v} / 4`, set: (beats) => app.setTransport({ beats }), tone: 'time', off: !!s.songOn },
+    { label: 'Loop bars', value: Math.max(0, BARS.indexOf(tr.bars)), min: 0, max: BARS.length - 1, format: (i) => `${BARS[i]} bar${BARS[i] > 1 ? 's' : ''}`, set: (i) => app.setTransport({ bars: BARS[i] }), tone: 'time', hint: 'a new board cell records this long' },
+    { label: 'Grid', value: Math.max(0, GRID.findIndex((g) => g[0] === tr.quantize)), min: 0, max: GRID.length - 1, format: (i) => GRID[i][1], set: (i) => app.setTransport({ quantize: GRID[i][0] }), tone: 'time', hint: 'recorded notes snap to it' },
+    { label: 'Velocity', value: s.velocity, min: 1, max: 127, format: String, set: (v) => app.set('velocity', v), tone: 'space', hint: 'how hard a click plays' },
+    null, null, null] }
+}
+
+/** A video, backing or picture track: its level and place, and the bus it shares. */
+function trackPages(s: AppState): Page[] {
+  const t = s.tracks.find((x) => x.id === s.sel), m = t?.mix
   return [
     { id: 'track', name: 'Track', knobs: [
       { label: 'Volume', value: m?.volume ?? 0, min: -48, max: 6, step: 0.5, def: 0, format: db, set: (volume) => t && app.setMix(t.id, { volume }), tone: 'space', hint: 'the tile dims with it', off: !t },
       { label: 'Pan', value: m?.pan ?? 0, min: -1, max: 1, step: 0.05, def: 0, format: panText, set: (pan) => t && app.setMix(t.id, { pan }), tone: 'space', off: !t },
-      ...space(sends, setSends, s.fx, t?.kind !== 'instrument').slice(0, 2),
-      ...bus(s.fx).slice(0, 4)] },
-    { id: 'song', name: 'Song', knobs: [
-      { label: 'Tempo', value: tr.bpm, min: 40, max: 240, format: (v) => `${v} BPM`, set: (bpm) => app.setTransport({ bpm }), tone: 'time', hint: 'the delay follows', off: !!s.songOn },
-      { label: 'Beats', value: tr.beats, min: 2, max: 7, format: (v) => `${v} / 4`, set: (beats) => app.setTransport({ beats }), tone: 'time', off: !!s.songOn },
-      { label: 'Loop bars', value: Math.max(0, BARS.indexOf(tr.bars)), min: 0, max: BARS.length - 1, format: (i) => `${BARS[i]} bar${BARS[i] > 1 ? 's' : ''}`, set: (i) => app.setTransport({ bars: BARS[i] }), tone: 'time', hint: 'a new board cell records this long' },
-      { label: 'Grid', value: Math.max(0, GRID.findIndex((g) => g[0] === tr.quantize)), min: 0, max: GRID.length - 1, format: (i) => GRID[i][1], set: (i) => app.setTransport({ quantize: GRID[i][0] }), tone: 'time', hint: 'recorded notes snap to it' },
-      { label: 'Velocity', value: s.velocity, min: 1, max: 127, format: String, set: (v) => app.set('velocity', v), tone: 'space' },
-      null, null, null] },
+      ...bus(s.fx).slice(0, 6)] },
   ]
 }
 
-function postPages(s: AppState): Page[] {
+function picturePages(s: AppState): Page[] {
   const lk = s.look, set = (x: Partial<typeof lk>) => app.set('look', { ...lk, ...x })
   return [
     { id: 'look', name: 'Look', knobs: [
@@ -189,52 +192,53 @@ function postPages(s: AppState): Page[] {
       { label: 'Border', value: lk.border, min: 0, max: 0.012, step: 0.001, format: (v) => `${(v * 100).toFixed(1)} %`, set: (border) => set({ border }), tone: 'pic' },
       { label: 'Pop', value: lk.pop, min: 0, max: 0.25, step: 0.01, format: (v) => `${Math.round(v * 100)} %`, set: (pop) => set({ pop }), tone: 'pic', hint: 'a hit bumps its tile' },
       null, null, null, null] },
-    { id: 'mix', name: 'Mix', knobs: bus(s.fx) },
+    { id: 'mix', name: 'Bus', knobs: bus(s.fx) },
   ]
 }
 
-function pagesFor(s: AppState, u: UiState): Page[] {
-  if (u.mode === 'mix') return mixPages(s)
-  if (u.mode === 'post') return postPages(s)
-  return s.kind === 'pads' ? padPages(s) : s.kind === 'layers' ? layerPages(s, u) : clipPages(s)
+/** What the knobs are on: the picture, a track that is not an instrument, or the selected instrument. */
+function knobTarget(s: AppState, u: UiState): { key: string; pages: Page[]; target: string; selection: string } {
+  if (u.picture) return { key: 'picture', pages: picturePages(s), target: 'The picture', selection: 'picture' }
+  const t = s.tracks.find((x) => x.id === s.sel)
+  if (t && t.kind !== 'instrument') return { key: 'track', pages: [...trackPages(s), songPage(s)], target: t.name, selection: `track:${t.id}` }
+  const name = (id: string | null | undefined) => s.clips.find((c) => c.id === id)?.name
+  if (s.kind === 'pads') {
+    const sel = s.pads.chains.find((c) => c.note === s.pads.selected)
+    return { key: 'pads', pages: [...padPages(s), songPage(s)], target: `Pad ${noteName(s.pads.selected)}${name(sel?.clipId) ? `: ${name(sel?.clipId)}` : ''}`, selection: `${s.sel}:${s.pads.selected}` }
+  }
+  if (s.kind === 'layers') {
+    const i = Math.max(0, s.layers.chains.findIndex((c) => c.id === u.layer)), c = s.layers.chains[i]
+    return { key: 'layers', pages: [...layerPages(s, u), songPage(s)], target: c ? `Layer ${i + 1}${name(c.clipId) ? `: ${name(c.clipId)}` : ''}` : 'No layers yet', selection: `${s.sel}:${c?.id}` }
+  }
+  return { key: 'clip', pages: [...clipPages(s), songPage(s)], target: name(s.clip.clipId) ?? 'No clip yet', selection: `${s.sel}:${s.clip.clipId}` }
 }
 
-/** What the knobs are on, in a few words. */
-function targetName(s: AppState, u: UiState) {
-  if (u.mode === 'mix') return s.tracks.find((t) => t.id === s.sel)?.name ?? 'The mix'
-  if (u.mode === 'post') return 'The picture'
-  const name = (id: string | null | undefined) => s.clips.find((c) => c.id === id)?.name
-  if (s.kind === 'pads') { const sel = s.pads.chains.find((c) => c.note === s.pads.selected); return `Pad ${noteName(s.pads.selected)}${name(sel?.clipId) ? `: ${name(sel?.clipId)}` : ''}` }
-  if (s.kind === 'layers') { const i = Math.max(0, s.layers.chains.findIndex((c) => c.id === u.layer)); const c = s.layers.chains[i]; return c ? `Layer ${i + 1}${name(c.clipId) ? `: ${name(c.clipId)}` : ''}` : 'No layers yet' }
-  return name(s.clip.clipId) ?? 'No clip yet'
+/** What the knobs are on, in a few words (the inspector's subtitle). */
+export function KnobTargetName() {
+  const s = useStore(app.store, (x) => x)
+  const u = useStore(ui, (x) => x)
+  return <>{knobTarget(s, u).target}</>
 }
 
 /**
- * Eight knobs that follow the selection (Push, Move): pages for each instrument and mode, colour-coded
- * by what they change, the value popping up over the stage while turning. "More" opens the full editor.
+ * Eight knobs that follow the selection (Push, Move): pages for each instrument, the picture and the
+ * song, colour-coded by what they change, the value popping up over the stage while turning.
  */
-export function DeckKnobs() {
+export function KnobGrid() {
   const s = useStore(app.store, (x) => x)
   const u = useStore(ui, (x) => x)
-  const pages = pagesFor(s, u)
-  const key = u.mode === 'mix' || u.mode === 'post' ? u.mode : `${u.mode}:${s.kind}`
+  const { key, pages, selection } = knobTarget(s, u)
   const cur = pages.find((p) => p.id === u.page[key]) ?? pages[0]
-  const target = targetName(s, u)
-  // the knobs remount when the selection changes (each keeps the default its first value set), not when a value does
-  const selection = u.mode === 'mix' ? `mix:${s.sel}` : u.mode === 'post' ? u.mode : s.kind === 'pads' ? s.pads.selected : s.kind === 'layers' ? u.layer ?? s.layers.chains[0]?.id : s.clip.clipId
   return (
     <section className="knobs" aria-label="Knobs">
-      <header>
-        <span className="target" title={target}>{target}</span>
-        {(u.mode === 'play' || u.mode === 'shape') && <button type="button" className="more" aria-pressed={u.sheet} onClick={() => ui.set({ sheet: !u.sheet })} title="Every setting for this instrument">More</button>}
-      </header>
       <nav className="pagerow" aria-label="Knob pages">
         <span className="pages">{pages.map((p) => <button key={p.id} type="button" aria-pressed={p === cur} onClick={() => ui.set({ page: { ...u.page, [key]: p.id } })}>{p.name}</button>)}</span>
-        {cur.head && <span className="khead">{cur.head}</span>}
       </nav>
+      {cur.head && <div className="khead">{cur.head}</div>}
       <div className="kgrid">
         {cur.knobs.map((k, i) => k
           ? (
+            // the knobs remount when the selection changes (each keeps the default its first value set), not when a value does
             <div key={`${cur.id}:${i}:${selection}`} className={`kslot t-${k.tone}`}>
               <Slider label={k.label} value={k.value} min={k.min} max={k.max} step={k.step} def={k.def} format={k.format} parse={k.parse} disabled={k.off}
                 onChange={(v) => { k.set(v); hud(k.label, k.format(v), k.hint) }} />

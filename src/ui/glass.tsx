@@ -48,15 +48,17 @@ function lensMap(w: number, h: number, r: number, b: number): string {
 
 /**
  * Glass with a lens, for what floats: wraps its children in an element whose backdrop is refracted at the
- * rim, then frosted (`frost`). Elsewhere (Safari, Firefox, reduced transparency) it is frosted only.
+ * rim, then frosted (`frost`). Elsewhere (Safari, Firefox, reduced transparency, or `refract={false}` over
+ * the live video) it is frosted only.
  */
-export function Lens({ className = '', radius = 12, bezel = 12, strength = 28, frost = 'blur(3px) saturate(160%)', children, as = 'div', ...rest }: { className?: string; radius?: number; bezel?: number; strength?: number; frost?: string; children: ReactNode; as?: 'div' | 'output' | 'fieldset' } & Record<string, unknown>) {
+export function Lens({ className = '', radius = 12, bezel = 12, strength = 28, frost = 'blur(3px) saturate(160%)', refract = true, children, as = 'div', ...rest }: { className?: string; radius?: number; bezel?: number; strength?: number; frost?: string; refract?: boolean; children: ReactNode; as?: 'div' | 'output' | 'fieldset' } & Record<string, unknown>) {
   const id = `lens${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const el = useRef<HTMLElement>(null)
   const img = useRef<SVGFEImageElement>(null)
   useEffect(() => {
     const node = el.current
-    if (!node || !chromium || reduced()) return
+    // over the live video the backdrop changes every frame, and an SVG filter there costs the stage frames: frost only
+    if (!node || !refract || !chromium || reduced()) return
     let last = ''
     const fit = () => {
       const w = Math.round(node.offsetWidth), h = Math.round(node.offsetHeight)
@@ -71,7 +73,7 @@ export function Lens({ className = '', radius = 12, bezel = 12, strength = 28, f
     const ro = new ResizeObserver(fit)
     ro.observe(node)
     return () => ro.disconnect()
-  }, [id, radius, bezel, frost])
+  }, [id, radius, bezel, frost, refract])
   const Tag = as as 'div'
   return (
     <Tag ref={el as React.RefObject<HTMLDivElement>} className={`lens ${className}`} {...rest}>

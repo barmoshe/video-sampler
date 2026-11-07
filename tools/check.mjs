@@ -116,9 +116,8 @@ try {
     const names = await S('s.pads.chains.slice(0, 4).map((c) => s.clips.find((x) => x.id === c.clipId)?.name).join(", ")')
     return `${n} pads loaded (${names}, …)`
   })
-  await step('the deck\'s knobs follow the selection: Cutoff turned from the deck closes a low-pass, the value pops up', async () => {
+  await step('the inspector\'s knobs follow the selection: Cutoff turned there closes a low-pass, the value pops up', async () => {
     await click('.instruments button:nth-child(2)') // Clip
-    await click('[data-mode="play"]')
     await sleep(200)
     const before = await S('`${s.clip.filter.type} ${Math.round(s.clip.filter.cutoff)}`')
     const ok = await evaluate(`(() => {
@@ -401,8 +400,7 @@ try {
   })
   await step('sample editor: drag the start handle, double-click a manual slice', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id, mode: 'classic', start: 0, end: 1, slices: [] })")
-    await click('[data-mode="shape"]') // the sample editor is SHAPE mode's (ADR 0772)
-    await sleep(300)
+    await sleep(300) // the sample editor is the inspector's, under the knobs (ADR 0776)
     const measure = () => evaluate("(() => { const c = document.querySelector('.sampler-ed canvas'); c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })()")
     let r = await measure()
     await sleep(200)
@@ -422,7 +420,6 @@ try {
     const slices = await S('s.clip.slices.map((t) => t.toFixed(1)).join(",")')
     await shot('10b-sample-editor.png')
     await evaluate("window.__vs.setClip({ mode: 'classic', sliceBy: 'transient', slices: [], start: 0 })")
-    await click('[data-mode="play"]')
     if (Math.abs(start - 0.25) > 0.03 || !slices) throw new Error(`start ${start}, slices ${slices}, under the cursor ${under}, canvas ${JSON.stringify(r)}, events ${JSON.stringify(await evaluate('window.__ev'))}`)
     return `start dragged to ${start.toFixed(2)}; a manual slice at ${slices} s`
   })
@@ -439,31 +436,33 @@ try {
     if ((await S('s.takes.length')) !== before + 1 || (await S('s.take.events.filter((e) => e.ev.type === "on").length')) < 3) throw new Error(got)
     return got
   })
-  await step('the four modes in light and dark (screenshots at 1470×832)', async () => {
+  await step('the window in light and dark: Clip, Pads, the timeline, the picture in 9:16 (screenshots at 1470×832)', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id })")
     const seen = []
+    // what spills out of the window, not what a scroller (the library, the board, the timeline, the inspector) keeps out of view
+    const spill = () => evaluate("[...document.querySelectorAll('.app *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width && !e.closest('.lib-grid, .board2, .tl, .insp-body, .takes-row, .screen') && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1) }).map((e) => e.className || e.tagName).slice(0, 5).join(' ')")
+    const states = [
+      ['clip', async () => { await click('.instruments button:nth-child(2)'); await evaluate("window.__vs.store.set({ view: 'board' })") }],
+      ['pads', async () => { await click('.instruments button:nth-child(3)') }],
+      ['timeline', async () => { await click('.instruments button:nth-child(2)'); await evaluate("window.__vs.store.set({ view: 'timeline' })") }],
+      ['picture', async () => { await evaluate("window.__vs.set('aspect', '9:16')"); await click('.picsel') }],
+    ]
     for (const mode of ['light', 'dark']) {
       await evaluate(`document.documentElement.dataset.theme = '${mode}'`) // the theme is a setting (ADR 0774), light by default
-      for (const m of ['play', 'shape', 'mix', 'post']) {
-        await click(`[data-mode="${m}"]`)
-        await sleep(250)
-        if (m === 'post') await evaluate("window.__vs.set('aspect', '9:16')")
-        await sleep(150)
-        // what spills out of the window, not what a scroller (the sounds, the board, the takes) keeps out of view
-        const over = await evaluate("[...document.querySelectorAll('.deck *, .top *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width && !e.closest('.sounds, .board, .takes-row, .cells') && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1) }).map((e) => e.className || e.tagName).slice(0, 5).join(' ')")
-        seen.push(`${m}${over ? ` (outside the window: ${over})` : ''}`)
-        await shot(`12-${m}-${mode}.png`)
-        if (m === 'post') await evaluate("window.__vs.set('aspect', '16:9')")
+      for (const [name, set] of states) {
+        await set()
+        await sleep(400)
+        const over = await spill()
+        seen.push(`${name}${over ? ` (outside the window: ${over})` : ''}`)
+        await shot(`12-${name}-${mode}.png`)
       }
-      await click('[data-mode="play"]')
-      await click('.knobs .more'); await sleep(200)
-      await shot(`13-sheet-${mode}.png`)
-      await click('.knobs .more')
+      await click('.picsel') // back to the track
+      await evaluate("window.__vs.set('aspect', '16:9'); window.__vs.store.set({ view: 'board' })")
     }
     const bg = await evaluate("getComputedStyle(document.body).backgroundColor")
     await evaluate("document.documentElement.dataset.theme = 'light'")
     if (seen.some((x) => x.includes('outside'))) throw new Error(seen.join(', '))
-    return `${seen.slice(0, 4).join(', ')} captured in both, beside the timeline; body in dark ${bg}`
+    return `${seen.slice(0, 4).join(', ')} captured in both; body in dark ${bg}`
   })
   await step('undo an edit; the project saves itself and comes back after a reload', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")
