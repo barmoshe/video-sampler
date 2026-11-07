@@ -19,6 +19,23 @@ Nothing is uploaded. Your clips stay in your browser.
 Six layouts arrange the sounding notes: Gallery, Keys, Stack, Mosaic, Spotlight and, for pads, a
 Home grid. Tiles slide on springs and never jump; a fast trill does not shuffle the grid.
 
+## The screen
+
+One instrument: the stage on top, a deck below. The deck has four mode keys (Option+1 to 4):
+
+- **Play**: the keys or the pads with the clips' pictures, scale and chords, the strip of sounds.
+- **Shape**: the selected clip's frames over its waveform (region, loop, slices), a pad's sound and
+  how it plays, or the layers with their key and morph zones.
+- **Loop**: the loop board. Each column is a section with its own main video and layers, launched
+  on the next bar; each cell is a recorded layer that loops as its own tile.
+- **Post**: the takes, their timeline, the shape (9:16 with the apps' safe zones, 16:9, 1:1), the
+  layout, the look of the tiles, and Export.
+
+Eight knobs on the right always follow what you touched last, in pages (Quick, Voice, Filter,
+Motion, Space for the Clip; others for pads, layers, the transport and the look). Their colour says
+what they change (orange the tone, blue time, graphite space, violet the picture), and the value
+pops up over the stage while you turn, with what the picture does. **More** opens every setting.
+
 ## Play it
 
 - The keys **A to '** play C to F, **Z X** change octave, **C V** velocity, **Space** is the
@@ -28,8 +45,8 @@ Home grid. Tiles slide on springs and never jump; a fast trill does not shuffle 
 - **MIDI** keyboards and controllers work in Chrome and Firefox. From Ableton Live, send a MIDI
   track to the IAC Driver (macOS) or loopMIDI (Windows); MIDI Clock start and stop record takes.
 - **The camera** records a 2 to 5 second clip straight onto the instrument.
-- **No video at hand?** "Try a demo clip" on the empty stage makes a short singing face in the
-  browser.
+- **No video at hand?** It opens with a marimba already loaded, and the strip of sounds under the
+  stage holds the whole pack: 26 CC0 recordings (VCSL), each with a 3D-rendered clip made for it.
 - A **.mid** file dropped on the page becomes a take: export a whole song played by your clips.
 
 ## Run it
@@ -65,7 +82,7 @@ built it (Bar Builds), not in this repo.
 
 ```bash
 npx tsc -b && npx oxlint && npx vitest run && npm run build
-node tools/check.mjs   # headless Chrome, end to end: load, play, layouts, pads, layers, camera, take, export
+node tools/check.mjs   # headless Chrome, end to end: first visit, play, knobs, layouts, pads, layers, looper, take, export, the four modes
 ```
 
 `tools/check.mjs` needs Google Chrome and ffprobe, and test clips from `--media <dir>`. With

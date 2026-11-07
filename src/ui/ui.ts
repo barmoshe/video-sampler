@@ -1,0 +1,46 @@
+// The shell's own state (ADR 0772): which mode the deck is in, which knob page, the "More" sheet, and
+// the value that pops up over the stage while a knob turns. Views only: not in undo or the project.
+import { createStore } from '../engine/store'
+import type { InstrumentKind } from '../engine/types'
+
+export type DeckMode = 'play' | 'shape' | 'loop' | 'post'
+export const MODES: [DeckMode, string, string][] = [
+  ['play', 'Play', 'keys, pads'],
+  ['shape', 'Shape', 'sound, picture'],
+  ['loop', 'Loop', 'layers, sections'],
+  ['post', 'Post', 'look, export'],
+]
+
+
+export const INSTRUMENTS: [InstrumentKind, string, string][] = [
+  ['clip', 'Clip', 'One clip across the keys, at every pitch'],
+  ['pads', 'Pads', 'A clip on each pad: drums, hits, phrases'],
+  ['layers', 'Layers', 'Clips stacked, split by key or velocity, morphed by a macro'],
+]
+
+export interface Hud { label: string; value: string; hint?: string; at: number }
+export interface UiState {
+  mode: DeckMode
+  page: Partial<Record<string, string>> // knob page per mode and instrument ("play:clip" → "filter")
+  sheet: boolean // the full editor over the stage
+  layer: string | null // the Layers instrument's selected layer (the knobs follow it)
+  hud: Hud | null
+  coach: boolean // the first-visit hint on the stage
+  safe: boolean // POST: show where the apps put their buttons over a 9:16 frame
+}
+
+const remembered = (): DeckMode => {
+  try { const m = localStorage.getItem('vs.mode'); return m === 'shape' || m === 'loop' || m === 'post' ? m : 'play' } catch { return 'play' }
+}
+
+export const ui = createStore<UiState>({ mode: remembered(), page: {}, sheet: false, layer: null, hud: null, coach: true, safe: true })
+
+export function setMode(mode: DeckMode) {
+  ui.set({ mode, sheet: false })
+  try { localStorage.setItem('vs.mode', mode) } catch { /* private window: the mode just isn't remembered */ }
+}
+
+/** Show a value over the stage for a moment (OP-1 style), with what the picture does. */
+export function hud(label: string, value: string, hint?: string) {
+  ui.set({ hud: { label, value, hint, at: performance.now() } })
+}

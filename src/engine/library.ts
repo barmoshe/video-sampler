@@ -17,3 +17,10 @@ export async function loadManifest(): Promise<LibraryItem[]> {
   return (Array.isArray(m) ? m : m.items ?? m.clips ?? []) as LibraryItem[]
 }
 
+
+/** A pack item as a File, ready for importFiles (the same path a dropped video takes). */
+export async function fileOf(item: LibraryItem): Promise<File> {
+  const res = await fetch(`/library/${item.file}`)
+  if (!res.ok) throw new Error(`${item.name}: ${res.status}`)
+  return new File([await res.blob()], `${item.name}.mp4`, { type: 'video/mp4' })
+}

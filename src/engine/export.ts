@@ -6,7 +6,7 @@ import { AudioBufferSource, BufferTarget, canEncodeAudio, Mp4OutputFormat, Outpu
 import { AudioEngine } from './audio'
 import { normalise } from './loudness-out'
 import { Performer, type InstrumentState } from './performer'
-import type { Stage, DrawOptions } from './stage'
+import type { Stage, DrawOptions, Look } from './stage'
 import { LayoutEngine } from './layout'
 import type { Take } from './take'
 import type { Clip, LayoutMode, StageAspect } from './types'
@@ -33,6 +33,7 @@ interface Deps {
   fit: boolean
   fx: FxSettings
   bpm: number
+  look?: Look
 }
 
 const LEAD = 0.1, TAIL = 1.5, FS = 48000
@@ -86,7 +87,7 @@ export async function exportTake(take: Take, d: Deps, o: ExportOptions, progress
     const modeAt = (t: number) => (o.followSections === false ? o.layout : cueAt(t)?.mode ?? o.layout)
     for (let k = 0; k < frames; k++) {
       const t = k / o.fps
-      d.stage.drawAt(t, t, voices, d.clips, { echo: { time: delaySeconds(d.fx, d.bpm), feedback: d.fx.delay.feedback, level: d.fx.delay.level, decay: d.fx.reverb.decay, reverb: d.fx.reverb.level }, section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold })
+      d.stage.drawAt(t, t, voices, d.clips, { echo: { time: delaySeconds(d.fx, d.bpm), feedback: d.fx.delay.feedback, level: d.fx.delay.level, decay: d.fx.reverb.decay, reverb: d.fx.reverb.level }, section: cueAt(t)?.section, mode: modeAt(t), homeCells: d.homeCells, homeBase: d.homeBase, fit: d.fit, maxTaps: 16, displayFps: o.fps, hold: take.hold, look: d.look })
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, raw)
       for (let y = 0; y < H; y++) rows.set(raw.subarray((H - 1 - y) * stride, (H - y) * stride), y * stride) // GL reads bottom-up
       const sample = new VideoSample(rows, { format: 'RGBA', codedWidth: W, codedHeight: H, timestamp: t, duration: 1 / o.fps, colorSpace: BT709 })

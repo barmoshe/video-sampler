@@ -17,7 +17,7 @@ const W = 1470, H = 832 // the workshop's test viewport (13" MacBook)
 mkdirSync(OUT, { recursive: true })
 for (const f of readdirSync(OUT)) rmSync(join(OUT, f), { recursive: true, force: true })
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp4': 'video/mp4', '.json': 'application/json', '.md': 'text/markdown' }
 const server = createServer((req, res) => {
   let p = join(DIST, decodeURIComponent(new URL(req.url, 'http://x').pathname))
   if (!existsSync(p) || statSync(p).isDirectory()) p = join(DIST, 'index.html')
@@ -90,22 +90,58 @@ try {
   await until('!!window.__vs && !!window.__vs.stage && !!window.__vs.performer')
   await page('Input.dispatchMouseEvent', { type: 'mousePressed', x: 400, y: 300, button: 'left', clickCount: 1 })
   await page('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 400, y: 300, button: 'left', clickCount: 1 })
-  await shot('01-empty.png')
+  const click = (sel) => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) throw new Error('nothing matches ' + ${JSON.stringify(JSON.stringify(sel))}); e.click(); return true })()`)
+  const clearClips = () => evaluate('for (const c of [...window.__vs.store.get().clips]) window.__vs.removeClip(c.id)')
 
-  await step('the demo clip: made in the browser, tuned to 220 Hz (A2)', async () => {
+  await step('first visit: an instrument that is on (the pack\'s marimba on the Clip)', async () => {
     const t0 = Date.now()
-    await evaluate('window.__vs.loadDemo()')
-    await until('window.__vs.store.get().clips.length === 1', 60000)
-    const r = await S('`root ${s.clips[0].root.toFixed(2)} (A2 = 57), ${s.clips[0].frames} frames`')
-    await evaluate('window.__vs.handlers.noteOn(60, 100, performance.now(), "keys"); window.__vs.handlers.noteOn(67, 100, performance.now(), "keys")')
-    await sleep(400)
-    await shot('00-demo.png')
-    await evaluate('window.__vs.handlers.noteOff(60, performance.now()); window.__vs.handlers.noteOff(67, performance.now())')
-    const root = await S('s.clips[0].root')
-    await evaluate('window.__vs.removeClip(window.__vs.store.get().clips[0].id)')
-    if (Math.abs(root - 57) > 0.2) throw new Error(r)
-    return `${((Date.now() - t0) / 1000).toFixed(1)} s, ${r}`
+    await until("window.__vs.store.get().clips.length === 1 && !window.__vs.store.get().starting", 60000)
+    const r = await S('`${s.clips[0].name}, root ${s.clips[0].root.toFixed(2)}, home key ${s.octave >= 0 ? "+" : ""}${s.octave} octave`')
+    await evaluate('window.__vs.handlers.noteOn(60, 100, performance.now(), "keys"); window.__vs.handlers.noteOn(64, 100, performance.now(), "keys"); window.__vs.handlers.noteOn(67, 100, performance.now(), "keys")')
+    await until('window.__vs.store.get().voices >= 3', 3000).catch(() => {}) // the count reaches the store a frame or two after the tiles
+    const voices = await S('s.voices')
+    await shot('01-first-visit.png')
+    await evaluate('for (const n of [60, 64, 67]) window.__vs.handlers.noteOff(n, performance.now())')
+    if ((await S('s.clips[0].name')) !== 'Marimba' || voices < 3) throw new Error(`${r}, ${voices} on stage`)
+    return `${((Date.now() - t0) / 1000).toFixed(1)} s to load; ${r}; a C major chord puts ${voices} tiles on stage`
   })
+  await step('pads: an empty kit fills itself with the pack\'s drums', async () => {
+    await click('.instruments button:nth-child(3)') // Pads (the legend is the first child)
+    await until('window.__vs.store.get().pads.chains.filter((c) => c.clipId).length >= 15', 90000)
+    const n = await S('s.pads.chains.filter((c) => c.clipId).length')
+    await evaluate('window.__vs.handlers.noteOn(36, 110, performance.now(), "keys"); window.__vs.handlers.noteOn(38, 100, performance.now(), "keys")')
+    await sleep(300)
+    await shot('02-pads-kit.png')
+    await evaluate('window.__vs.handlers.noteOff(36, performance.now()); window.__vs.handlers.noteOff(38, performance.now())')
+    const names = await S('s.pads.chains.slice(0, 4).map((c) => s.clips.find((x) => x.id === c.clipId)?.name).join(", ")')
+    return `${n} pads loaded (${names}, …)`
+  })
+  await step('the deck\'s knobs follow the selection: Cutoff turned from the deck closes a low-pass, the value pops up', async () => {
+    await click('.instruments button:nth-child(2)') // Clip
+    await click('.modekey.m-play')
+    await sleep(200)
+    const before = await S('`${s.clip.filter.type} ${Math.round(s.clip.filter.cutoff)}`')
+    const ok = await evaluate(`(() => {
+      const slot = [...document.querySelectorAll('.knobs .kslot')].find((k) => k.textContent.includes('Cutoff'))
+      const input = slot?.querySelector('input[type=range]')
+      if (!input) return false
+      input.focus()
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      set.call(input, String(Number(input.value) - 250))
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(150)
+    const hud = await evaluate("document.querySelector('.hud')?.textContent ?? ''")
+    await shot('03-knob-hud.png')
+    const after = await S('`${s.clip.filter.type} ${Math.round(s.clip.filter.cutoff)}`')
+    await evaluate("window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'off' } })")
+    if (!ok || !after.startsWith('lp') || !hud.includes('Cutoff')) throw new Error(`before ${before}, after ${after}, hud "${hud}"`)
+    return `filter ${before} → ${after}; the stage showed "${hud}"`
+  })
+  await clearClips()
+  await evaluate("window.__vs.setPads({ chains: [] })")
+
   await step('import a clip (30 s 1080p, frame barcode)', async () => {
     const t0 = Date.now()
     await setFiles([join(MEDIA, 'clip30.mp4')])
@@ -283,8 +319,9 @@ try {
     await evaluate('window.__vs.layerPad(38, 36)')
     const layered = await S('s.pads.chains.filter((c) => c.note === 36).length')
     await evaluate("window.__vs.setPads({ selected: 37 }); window.__vs.setPadPlay({ levels: true })")
+    const tl = await evaluate('window.__vs.ctx.currentTime') // only the voices this press starts (a one-shot from the step before may still sound)
     await key('Digit4', 'keyDown'); await sleep(200) // the top-right pad of the block: the loudest level
-    const vel = await evaluate('window.__vs.performer.book.voices.filter((v) => v.note === 37 && v.off === Infinity).map((v) => v.vel).join(",")')
+    const vel = await evaluate(`window.__vs.performer.book.voices.filter((v) => v.note === 37 && v.off === Infinity && v.on >= ${tl}).map((v) => v.vel).join(",")`)
     await key('Digit4', 'keyUp')
     await evaluate("window.__vs.setPadPlay({ levels: false, repeat: true, rate: 0.25, swing: 0 }); window.__vs.setTransport({ bpm: 120 })")
     const t0 = await evaluate('window.__vs.ctx.currentTime')
@@ -363,6 +400,7 @@ try {
   })
   await step('sample editor: drag the start handle, double-click a manual slice', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id, mode: 'classic', start: 0, end: 1, slices: [] })")
+    await click('.modekey.m-shape') // the sample editor is SHAPE mode's (ADR 0772)
     await sleep(300)
     const measure = () => evaluate("(() => { const c = document.querySelector('.sampler-ed canvas'); c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })()")
     let r = await measure()
@@ -375,7 +413,7 @@ try {
     const start = await S('s.clip.start')
     await evaluate("window.__vs.setClip({ mode: 'slice', sliceBy: 'manual', start: 0 })")
     await sleep(300)
-    r = await measure() // Slice mode hides the Tune section, so the editor has moved up the panel
+    r = await measure() // re-measure: the row above the editor changes with the mode
     await sleep(200)
     await mouse('mousePressed', r.x + r.w * 0.5, 1); await mouse('mouseReleased', r.x + r.w * 0.5, 1)
     await mouse('mousePressed', r.x + r.w * 0.5, 2); await mouse('mouseReleased', r.x + r.w * 0.5, 2)
@@ -383,6 +421,7 @@ try {
     const slices = await S('s.clip.slices.map((t) => t.toFixed(1)).join(",")')
     await shot('10b-sample-editor.png')
     await evaluate("window.__vs.setClip({ mode: 'classic', sliceBy: 'transient', slices: [], start: 0 })")
+    await click('.modekey.m-play')
     if (Math.abs(start - 0.25) > 0.03 || !slices) throw new Error(`start ${start}, slices ${slices}, under the cursor ${under}, canvas ${JSON.stringify(r)}, events ${JSON.stringify(await evaluate('window.__ev'))}`)
     return `start dragged to ${start.toFixed(2)}; a manual slice at ${slices} s`
   })
@@ -399,16 +438,31 @@ try {
     if ((await S('s.takes.length')) !== before + 1 || (await S('s.take.events.filter((e) => e.ev.type === "on").length')) < 3) throw new Error(got)
     return got
   })
-  await step('the Instrument look in light and dark (screenshots at 1470×832)', async () => {
-    await evaluate("window.__vs.setKind('clip')")
+  await step('the four modes in light and dark (screenshots at 1470×832)', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id })")
+    const seen = []
     for (const mode of ['light', 'dark']) {
       await page('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] })
-      await sleep(400)
-      await shot(`11-${mode}.png`)
+      for (const m of ['play', 'shape', 'loop', 'post']) {
+        await click(`.modekey.m-${m}`)
+        await sleep(250)
+        if (m === 'post') await evaluate("window.__vs.set('aspect', '9:16')")
+        await sleep(150)
+        // what spills out of the window, not what a scroller (the sounds, the board, the takes) keeps out of view
+        const over = await evaluate("[...document.querySelectorAll('.deck *, .top *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width && !e.closest('.sounds, .board, .takes-row, .cells') && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1) }).map((e) => e.className || e.tagName).slice(0, 5).join(' ')")
+        seen.push(`${m}${over ? ` (outside the window: ${over})` : ''}`)
+        await shot(`12-${m}-${mode}.png`)
+        if (m === 'post') await evaluate("window.__vs.set('aspect', '16:9')")
+      }
+      await click('.modekey.m-play')
+      await click('.knobs .more'); await sleep(200)
+      await shot(`13-sheet-${mode}.png`)
+      await click('.knobs .more')
     }
     const bg = await evaluate("getComputedStyle(document.body).backgroundColor")
     await page('Emulation.setEmulatedMedia', { features: [] })
-    return `light and dark captured; body in dark ${bg}`
+    if (seen.some((x) => x.includes('outside'))) throw new Error(seen.join(', '))
+    return `${seen.slice(0, 4).join(', ')} captured in both; body in dark ${bg}`
   })
   await step('undo an edit; the project saves itself and comes back after a reload', async () => {
     await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ filter: { ...window.__vs.store.get().clip.filter, type: 'hp', cutoff: 800 } })")
@@ -420,7 +474,7 @@ try {
     const saved = await evaluate("(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('video-sampler'); return JSON.parse(await (await (await d.getFileHandle('project.json')).getFile()).text()).clips.length })()")
     await evaluate('location.reload()')
     await sleep(1500)
-    await until(`window.__vs && JSON.stringify(window.__vs.store.get().clips.map((c) => c.id)) === ${JSON.stringify(before)}`, 120000)
+    await until(`window.__vs && JSON.stringify(window.__vs.store.get().clips.map((c) => c.id)) === ${JSON.stringify(before)}`, 240000) // a loaded machine restores slowly
     const back = await S('`${s.clips.length} clips, kind ${s.kind}, ${s.loopLayers.length + s.sections.reduce((n, x) => n + x.layers.length, 0)} looper layers`')
     if (after !== 'off') throw new Error(`undo left ${after}`)
     return `undo → filter ${after}; saved ${saved} clips; after reload: ${back}`

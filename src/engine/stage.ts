@@ -24,6 +24,14 @@ export interface DrawOptions {
 /** How tiles are framed (production.md §3 A). Sizes are fractions of the stage's short side. */
 export interface Look { gap: number; radius: number; border: number; borderRGB: [number, number, number]; pop: number }
 export const CLEAN_LOOK: Look = { gap: 0.006, radius: 0.014, border: 0, borderRGB: [0.95, 0.94, 0.9], pop: 0.07 }
+/** The looks the POST mode offers (ADR 0772): starting points the Look knobs then move. */
+export const LOOKS: { id: string; name: string; look: Look }[] = [
+  { id: 'clean', name: 'Clean', look: CLEAN_LOOK },
+  { id: 'framed', name: 'Framed', look: { gap: 0.014, radius: 0.02, border: 0.005, borderRGB: [0.95, 0.94, 0.9], pop: 0.07 } },
+  { id: 'seamless', name: 'Seamless', look: { gap: 0, radius: 0, border: 0, borderRGB: [0.95, 0.94, 0.9], pop: 0.03 } },
+  { id: 'soft', name: 'Soft', look: { gap: 0.022, radius: 0.06, border: 0, borderRGB: [0.95, 0.94, 0.9], pop: 0.14 } },
+  { id: 'signal', name: 'Signal', look: { gap: 0.01, radius: 0.012, border: 0.004, borderRGB: [0.95, 0.38, 0.11], pop: 0.1 } },
+]
 
 /**
  * What the eye sees of a voice's level: fully there until −36 dB, then gone by −60 dB, so a

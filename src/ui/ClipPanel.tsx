@@ -5,7 +5,7 @@ import type { Clip } from '../engine/types'
 import { noteName, type FilterSpec, type FilterType, type LfoShape, type LfoSpec } from '../engine/voice-math'
 import { Check, Section, Seg, Slider } from './controls'
 import { SampleEditor } from './SampleEditor'
-import { ms, pct, rgb } from './format'
+import { fromLog, hz, ms, parseHz, pct, rgb, toLog } from './format'
 
 export function ClipList({ selected, onPick }: { selected: string | null; onPick: (id: string) => void }) {
   const clips = useStore(app.store, (s) => s.clips)
@@ -122,9 +122,6 @@ export function ClipPanel({ onCamera }: { onCamera: () => void }) {
   )
 }
 
-const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} kHz` : `${Math.round(v)} Hz`)
-const toLog = (hzv: number) => Math.round((Math.log(hzv / 20) / Math.log(1000)) * 1000)
-const fromLog = (x: number) => 20 * Math.pow(1000, x / 1000)
 
 /** Filter with its envelope; the tile shows it (blur, edges, glow, drive). */
 export function FilterSection({ filter: f, onChange }: { filter: FilterSpec; onChange: (f: FilterSpec) => void }) {
@@ -136,7 +133,7 @@ export function FilterSection({ filter: f, onChange }: { filter: FilterSpec; onC
       <Seg<FilterType> label="Type" value={f.type} options={[['off', 'Off'], ['lp', 'Low-pass'], ['hp', 'High-pass'], ['bp', 'Band'], ['notch', 'Notch']]} onChange={(type) => set({ type, cutoff: type === 'hp' && f.cutoff > 10000 ? 200 : type === 'lp' && f.cutoff > 16000 ? 2000 : f.cutoff })} />
       <div className="grid2" style={{ marginTop: 10 }}>
         <Slider label="Cutoff" value={toLog(f.cutoff)} min={0} max={1000} format={(v) => hz(fromLog(v))} onChange={(v) => set({ cutoff: fromLog(v) })} disabled={off} def={toLog(2000)}
-          parse={(s) => { const m = /^\s*(\d*\.?\d+)\s*(k)?/i.exec(s); return m ? toLog(Math.max(20, Math.min(20000, Number(m[1]) * (m[2] ? 1000 : 1)))) : null }} />
+          parse={parseHz} />
         <Slider label="Resonance" value={f.res} min={0} max={1} step={0.01} format={pct} onChange={(res) => set({ res })} disabled={off} />
         <Slider label="Drive" value={f.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} />
         <Slider label="Key track" value={f.key} min={0} max={1} step={0.05} format={pct} onChange={(key) => set({ key })} disabled={off} />

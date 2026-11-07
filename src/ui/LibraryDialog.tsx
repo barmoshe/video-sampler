@@ -2,15 +2,9 @@ import { useEffect, useState } from 'react'
 import { app } from '../engine/app'
 import { useStore } from '../engine/store'
 import { Dialog } from './Dialog'
-import { loadManifest, type LibraryItem } from '../engine/library'
+import type { LibraryItem } from '../engine/library'
 
 const KINDS: [LibraryItem['kind'] | 'all', string][] = [['all', 'All'], ['pitched', 'Instruments'], ['drum', 'Drums'], ['loop', 'Loops'], ['video', 'Videos']]
-
-async function fileOf(item: LibraryItem): Promise<File> {
-  const res = await fetch(`/library/${item.file}`)
-  if (!res.ok) throw new Error(`${item.name}: ${res.status}`)
-  return new File([await res.blob()], `${item.name}.mp4`, { type: 'video/mp4' })
-}
 
 /** The pack: pick a sound for the Clip, a pad or a new layer, or load the whole drum kit onto pads. */
 export function LibraryDialog({ onClose }: { onClose: () => void }) {
@@ -18,22 +12,19 @@ export function LibraryDialog({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<LibraryItem[] | null>(null)
   const [filter, setFilter] = useState<LibraryItem['kind'] | 'all'>('all')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { void loadManifest().then(setItems) }, [])
+  useEffect(() => { void app.library().then(setItems) }, [])
 
   const pick = async (item: LibraryItem) => {
     setBusy(true)
-    try { await app.importFiles([await fileOf(item)]) } catch (e) { app.say((e as Error).message) }
+    const s = app.store.get()
+    await app.loadItem(item, s.kind === 'pads' ? { pad: s.pads.selected } : undefined)
     setBusy(false)
     onClose()
   }
   const kit = async () => {
-    const drums = (items ?? []).filter((i) => i.kind === 'drum').slice(0, 16)
     setBusy(true)
     app.setKind('pads')
-    const base = app.bankBase()
-    for (let i = 0; i < drums.length; i++) {
-      try { await app.importFiles([await fileOf(drums[i])], { pad: base + i }) } catch (e) { app.say((e as Error).message) }
-    }
+    await app.loadKit()
     setBusy(false)
     onClose()
   }

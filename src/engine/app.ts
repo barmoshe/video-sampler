@@ -20,7 +20,8 @@ export interface PadPlay { repeat: boolean; rate: number; swing: number; levels:
 /** 16 Levels: pad i of the block plays the selected pad at this velocity (soft bottom-left to hard top-right). */
 export const levelVelocity = (i: number) => Math.round(8 + (i * 119) / 15)
 import { Performer, type InstrumentState, type PlayEvent } from './performer'
-import { Stage } from './stage'
+import { CLEAN_LOOK, Stage, type Look } from './stage'
+import { fileOf, loadManifest, type LibraryItem } from './library'
 import { createStore } from './store'
 import { capturePhrase, midiToTake, takeDuration, takeToMidi, type Take, type TakeEvent } from './take'
 import type { Clip, InstrumentKind, LayoutMode, StageAspect } from './types'
@@ -68,13 +69,15 @@ export interface AppState {
   savedAt: number | null // when the project last saved itself (null: not yet, or storage unavailable)
   canUndo: boolean
   canRedo: boolean
+  look: Look // how tiles are framed (POST mode's looks)
+  starting: boolean // the first visit's instrument is loading
 }
 
 /** The returns' picture twins, from the bus settings (stage.ts). */
 export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx, bpm), feedback: fx.delay.feedback, level: fx.delay.level, decay: fx.reverb.decay, reverb: fx.reverb.level })
 
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
-const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take', 'takes'] as const
+const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take', 'takes', 'look'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
 const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
@@ -90,7 +93,7 @@ const initial = (): AppState => ({
   padPlay: { repeat: false, rate: 0.25, swing: 0, levels: false },
   sections: [], section: 'A', queued: null, active: [], recording: false, take: null, takes: [], playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
-  savedAt: null, canUndo: false, canRedo: false,
+  savedAt: null, canUndo: false, canRedo: false, look: CLEAN_LOOK, starting: false,
 })
 
 export class App {
@@ -132,7 +135,7 @@ export class App {
       this.captureBuf.push({ t, ev }) // Capture's always-on memory: the last two minutes
       if (this.captureBuf.length > 4000 || this.captureBuf[0].t < t - 120) this.captureBuf = this.captureBuf.filter((e) => e.t >= t - 120).slice(-4000)
     }
-    void this.restore()
+    void this.restore().then((had) => { if (!had) void this.loadStarter() })
   }
 
   private instrumentState(): InstrumentState {
@@ -186,11 +189,41 @@ export class App {
   }
 
   /** On load: bring back the last project's clips (same ids) and settings. */
-  private async restore() {
-    if (!canPersist()) return
+  private async restore(): Promise<boolean> {
+    if (!canPersist()) return false
     const p = await loadProject()
-    if (!p || !p.clips.length) return
+    if (!p || !p.clips.length) return false
     await this.load(p, async (c) => readClipFile(c.file, c.name), 'Restoring', `Your last project is back (${p.clips.length} clip${p.clips.length === 1 ? '' : 's'}).`)
+    return true
+  }
+
+  // ---------- the pack: the first visit's instrument, sounds from the library (ADR 0770, 0772) ---
+  private manifest: Promise<LibraryItem[]> | null = null
+  library() { return (this.manifest ??= loadManifest().catch(() => [])) }
+
+  /** The first visit opens on an instrument that is already on: the pack's marimba on the Clip. */
+  async loadStarter() {
+    if (this.store.get().clips.length) return
+    this.store.set({ starting: true })
+    try {
+      const item = (await this.library()).find((i) => i.id === 'marimba') ?? (await this.library()).find((i) => i.kind === 'pitched')
+      if (item && !this.store.get().clips.length) await this.importFiles([await fileOf(item)])
+    } catch (e) { console.warn('[starter]', (e as Error).message) } finally { this.store.set({ starting: false }) }
+  }
+
+  /** A pack sound onto the Clip, a pad or a new layer (wherever the player is working). */
+  async loadItem(item: LibraryItem, target?: { pad?: number; layer?: string }) {
+    const have = this.store.get().clips.find((c) => c.name === item.name) // already in the project: no second import
+    if (have) { this.assign(have, target); return }
+    try { await this.importFiles([await fileOf(item)], target) } catch (e) { this.say((e as Error).message) }
+  }
+
+  /** The pack's drums onto this bank's pads, bottom-left first. */
+  async loadKit() {
+    const drums = (await this.library()).filter((i) => i.kind === 'drum').slice(0, 16)
+    const base = this.bankBase()
+    for (let i = 0; i < drums.length; i++) await this.loadItem(drums[i], { pad: base + i })
+    this.setPads({ selected: base })
   }
 
   /** Bring a project in: import each clip with its own id, then apply the saved settings. */
@@ -280,7 +313,7 @@ export class App {
     const t = audibleAt(this.ctx, now) + 1 / 60 + s.pictureOffsetMs / 1000
     const n = this.stage.drawAt(t, now / 1000, this.performer.book.voices, this.clips, {
       mode: s.layouts[s.kind], fit: s.fit, homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(),
-      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section, echo: echoOf(s.fx, s.transport.bpm),
+      hold: s.looping ? loopSeconds(s.transport) : 0, mainAlpha: s.main.alpha, section: s.section, echo: echoOf(s.fx, s.transport.bpm), look: s.look,
     })
     if (n !== this.lastCount) { this.lastCount = n; this.store.set({ voices: n }) }
     if (Math.random() < 0.02) this.performer.book.prune(this.ctx.currentTime)
@@ -413,19 +446,6 @@ export class App {
       } finally {
         this.store.set({ importing: null })
       }
-    }
-  }
-
-  /** A clip made in the browser for a first visit (no video needed). */
-  async loadDemo() {
-    this.store.set({ importing: { name: 'Demo voice', progress: 0, stage: 'Making a demo clip' } })
-    try {
-      const { makeDemoClip } = await import('./demo')
-      const file = await makeDemoClip((p) => this.store.set({ importing: { name: 'Demo voice', progress: p * 0.5, stage: 'Making a demo clip' } }))
-      await this.importFiles([file])
-    } catch (e) {
-      this.store.set({ importing: null })
-      this.say(`Could not make the demo clip: ${(e as Error).message}`)
     }
   }
 
@@ -815,7 +835,7 @@ export class App {
       const blob = await exportTake(s.take, {
         state: this.instrumentState(), clips: this.clips, levels: this.levels, stage: this.stage,
         homeCells: s.kind === 'pads' ? this.homeCells() : undefined, homeBase: this.bankBase(), fit: s.fit,
-        fx: s.fx, bpm: s.transport.bpm,
+        fx: s.fx, bpm: s.transport.bpm, look: s.look,
       }, opts, (progress, stage) => this.store.set({ exporting: { progress, stage } }))
       download(blob, `${s.take.name} ${opts.aspect.replace(':', 'x')}.mp4`)
     } catch (e) {

@@ -1,65 +1,26 @@
 import { useRef } from 'react'
-import { app, levelVelocity } from '../engine/app'
-import { PAD_BASE, type PadChain } from '../engine/instruments'
-import { PAD_LABEL } from '../engine/input'
+import { app } from '../engine/app'
+import type { PadChain } from '../engine/instruments'
 import { useStore } from '../engine/store'
 import { noteName } from '../engine/voice-math'
 import { ClipList } from './ClipPanel'
 import { Check, Section, Seg, Slider } from './controls'
-import { ms, rgb } from './format'
+import { ms } from './format'
+import { Banks, PadGrid } from './PadGrid'
 
 export function PadsPanel({ onCamera }: { onCamera: () => void }) {
   const pads = useStore(app.store, (s) => s.pads)
   const clips = useStore(app.store, (s) => s.clips)
-  const active = useStore(app.store, (s) => s.active)
-  const velocity = useStore(app.store, (s) => s.velocity)
   const play = useStore(app.store, (s) => s.padPlay)
   const file = useRef<HTMLInputElement>(null)
-  const base = PAD_BASE + pads.bank * 16
   const sel = pads.chains.find((c) => c.note === pads.selected)
   const set = (p: Partial<PadChain>) => app.setPad(pads.selected, p)
 
-  // the 4×4 block is laid out like the keys: bottom row = the bank's first four pads
-  const order = [12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3]
   return (
     <>
       <Section title="Pads" action={<button type="button" className="btn" onClick={onCamera}>Camera</button>}>
-        <fieldset className="banks"><legend className="sr">Bank</legend>
-          {Array.from({ length: 8 }, (_, b) => <button key={b} type="button" aria-pressed={pads.bank === b} title={`Pads ${noteName(PAD_BASE + b * 16)} to ${noteName(PAD_BASE + b * 16 + 15)}`} onClick={() => app.setPads({ bank: b, selected: PAD_BASE + b * 16 })}>{'ABCDEFGH'[b]}</button>)}
-        </fieldset>
-        <div className="padgrid">
-          {order.map((i) => {
-            const note = base + i
-            const chs = pads.chains.filter((c) => c.note === note && c.clipId)
-            const shown = play.levels ? pads.chains.find((c) => c.note === pads.selected) : chs[0]
-            const clip = clips.find((c) => c.id === shown?.clipId)
-            const playable = play.levels ? !!clip : chs.length > 0
-            return (
-              <button
-                key={note}
-                type="button"
-                className={`pad ${active.includes(play.levels ? pads.selected : note) && !play.levels ? 'on' : ''}`}
-                aria-pressed={!play.levels && pads.selected === note}
-                aria-label={play.levels ? `Velocity ${levelVelocity(i)}` : `Pad ${noteName(note)}${clip ? `, ${clip.name}${chs.length > 1 ? `, ${chs.length} layers` : ''}` : ', empty'}`}
-                draggable={!play.levels && chs.length > 0}
-                onDragStart={(e) => e.dataTransfer.setData('text/x-pad', String(note))}
-                onPointerDown={() => { if (!play.levels) app.setPads({ selected: note }); if (playable) app.handlers.noteOn(note, velocity, performance.now(), 'keys') }}
-                onPointerUp={() => playable && app.handlers.noteOff(note, performance.now())}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault(); e.stopPropagation()
-                  const from = e.dataTransfer.getData('text/x-pad')
-                  if (from) { if (e.altKey) app.layerPad(Number(from), note); else app.swapPads(Number(from), note); return }
-                  if (e.dataTransfer.files.length) void app.importToPads([...e.dataTransfer.files], note)
-                }}
-              >
-                {clip && <span className="fill" style={{ background: `${rgb(clip.poster)} url(${clip.thumb}) center / cover`, opacity: play.levels ? 0.25 + (0.75 * i) / 15 : undefined }} />}
-                <span>{PAD_LABEL[i]}</span>
-                <span>{play.levels ? `vel ${levelVelocity(i)}` : clip ? `${clip.name.slice(0, chs.length > 1 ? 6 : 9)}${chs.length > 1 ? ` ×${chs.length}` : ''}` : noteName(note)}</span>
-              </button>
-            )
-          })}
-        </div>
+        <Banks />
+        <PadGrid />
         <p className="muted" style={{ margin: '10px 0 0' }}>Drop videos on a pad (several fill the pads after it). Drag a pad onto another to swap them; hold Alt to layer it there. Keys Z X C V are the bottom row.</p>
       </Section>
       <Section title="Play">

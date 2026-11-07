@@ -6,14 +6,15 @@ import { positionAt } from '../engine/voicebook'
 import { peaks } from '../engine/waveform'
 
 type Marker = 'start' | 'end' | 'loopStart' | 'loopEnd' | { slice: number }
-const H = 72, GRAB = 7
+const GRAB = 7
 
 /**
  * The sample editor (production.md §3 E): the clip's frames over its waveform, with start, end and
  * loop markers you drag, slice lines (double-click adds a manual slice in Slice mode, Alt-click on a
  * manual slice removes it), and a playhead for every voice of this clip that is sounding.
  */
-export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
+export function SampleEditor({ p, clip, height = 72, help = true }: { p: ClipParams; clip: Clip; height?: number; help?: boolean }) {
+  const H = height
   const cv = useRef<HTMLCanvasElement>(null)
   const drag = useRef<Marker | null>(null)
   const ps = useRef(p)
@@ -29,7 +30,7 @@ export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
       if (!c) return
       const p = ps.current
       const w = c.clientWidth, dpr = Math.min(2, devicePixelRatio || 1)
-      if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(H * dpr) }
+      if (c.width !== Math.round(w * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(H * dpr) }
       const g = c.getContext('2d')!
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.clearRect(0, 0, w, H)
@@ -78,7 +79,7 @@ export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
     }
     draw()
     return () => cancelAnimationFrame(raf)
-  }, [clip, pk, d])
+  }, [clip, pk, d, H])
 
   const fracAt = (e: React.PointerEvent | React.MouseEvent) => {
     const r = cv.current!.getBoundingClientRect()
@@ -127,9 +128,9 @@ export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
           app.setClip({ slices: [...p.slices, fracAt(e) * d].sort((a, b) => a - b) })
         }}
       />
-      <p className="muted" style={{ margin: '6px 0 0' }}>
+      {help && <p className="muted" style={{ margin: '6px 0 0' }}>
         Drag the black handles for the region{p.mode === 'classic' && p.loop ? ', the blue ones for the loop' : ''}.{p.mode === 'slice' ? ' Double-click to add a slice; Alt-click a slice you added to remove it.' : ''}
-      </p>
+      </p>}
     </div>
   )
 }

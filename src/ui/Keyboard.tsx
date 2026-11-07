@@ -56,8 +56,6 @@ export function Keyboard() {
   // positions first: white keys in a row, black keys over the gaps
   const layout = positions(lo, hi, ww)
   return (
-    <div className="keyzone">
-    <ScaleBar />
     <div className="keys" ref={el}>
       {layout.map(({ n, x, w, black }) => (
         <button
@@ -77,7 +75,6 @@ export function Keyboard() {
         </button>
       ))}
     </div>
-    </div>
   )
 }
 
@@ -85,13 +82,13 @@ const TONICS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const CHORDS: [ChordMode, string][] = [['off', 'Single notes'], ['triad', 'Triads'], ['seventh', 'Sevenths'], ['power', 'Power (1 5 8)'], ['octave', 'Octaves']]
 
 /** Key, scale lock and chord mode, above the keys. */
-function ScaleBar() {
+export function ScaleBar() {
   const s = useStore(app.store, (x) => x.scale)
   const kind = useStore(app.store, (x) => x.kind)
   if (kind === 'pads') return null
   return (
     <div className="scalebar">
-      <label className="check"><input type="checkbox" checked={s.lock} onChange={(e) => app.setScale({ lock: e.target.checked })} />Scale lock</label>
+      <button type="button" className="btn sm" aria-pressed={s.lock} onClick={() => app.setScale({ lock: !s.lock })} title={s.lock ? 'Every key plays in key: the home row plays the scale from A, the row above an octave up' : 'Lock the keys to a scale: nothing sounds out of key'}>Scale</button>
       <select aria-label="Key" value={s.tonic} onChange={(e) => app.setScale({ tonic: Number(e.target.value) })}>
         {TONICS.map((t, i) => <option key={t} value={i}>{t}</option>)}
       </select>
@@ -101,7 +98,6 @@ function ScaleBar() {
       <select aria-label="Chord" value={s.chord} onChange={(e) => app.setScale({ chord: e.target.value as ChordMode })}>
         {CHORDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
-      <span className="muted">{s.lock ? 'Home row plays the scale from A; the row above, an octave up. Nothing sounds out of key.' : 'Turn on Scale lock and every key is in key.'}</span>
     </div>
   )
 }
