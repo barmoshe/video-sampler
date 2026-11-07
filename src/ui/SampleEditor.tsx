@@ -84,13 +84,16 @@ export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
     const r = cv.current!.getBoundingClientRect()
     return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
   }
-  const nearest = (f: number, wpx: number): Marker | null => {
+  /** The marker under the pointer. Loop handles sit on the top edge, region handles on the bottom, so
+   *  where they overlap (a loop starting at the region's start) the pointer's height decides. */
+  const nearest = (f: number, wpx: number, y: number): Marker | null => {
     const p = ps.current
-    const cands: [Marker, number][] = [['start', p.start], ['end', p.end]]
-    if (p.mode === 'classic' && p.loop) cands.push(['loopStart', p.loopStart], ['loopEnd', p.loopEnd])
+    const region: [Marker, number][] = [['start', p.start], ['end', p.end]]
+    const loop: [Marker, number][] = p.mode === 'classic' && p.loop ? [['loopStart', p.loopStart], ['loopEnd', p.loopEnd]] : []
+    const cands = y < H * 0.4 ? [...loop, ...region] : [...region, ...loop]
     if (p.mode === 'slice') p.slices.forEach((t, i) => cands.push([{ slice: i }, t / d]))
     let best: Marker | null = null, bd = GRAB / wpx
-    for (const [m, v] of cands) { const dd = Math.abs(v - f); if (dd <= bd) { bd = dd; best = m } }
+    for (const [m, v] of cands) { const dd = Math.abs(v - f); if (dd < bd || (!best && dd <= bd)) { bd = dd; best = m } } // a tie keeps the first
     return best
   }
   const move = (m: Marker, f: number) => {
@@ -110,7 +113,7 @@ export function SampleEditor({ p, clip }: { p: ClipParams; clip: Clip }) {
         style={{ height: H }}
         aria-hidden="true"
         onPointerDown={(e) => {
-          const f = fracAt(e), m = nearest(f, cv.current!.clientWidth)
+          const f = fracAt(e), m = nearest(f, cv.current!.clientWidth, e.clientY - cv.current!.getBoundingClientRect().top)
           if (e.altKey && m && typeof m === 'object') { app.setClip({ slices: ps.current.slices.filter((_, i) => i !== m.slice) }); return }
           if (!m) return
           drag.current = m
