@@ -52,6 +52,15 @@ export function App() {
         <button type="button" className="btn rec" aria-pressed={s.recording} onClick={() => app.toggleRecord()} title="Record a take (Enter)">
           <span className="dot" /> {s.recording ? 'Stop' : 'Record'}
         </button>
+        <button type="button" className="btn" disabled={s.recording} onClick={() => app.capture()} title="Keep what you just played as a take, without having pressed Record (Shift+Enter)">Capture</button>
+        {s.takes.length > 0 && (
+          <span className="takes">
+            <select aria-label="Take" value={s.take?.id ?? ''} onChange={(e) => app.selectTake(e.target.value)}>
+              {s.takes.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.duration.toFixed(1)} s</option>)}
+            </select>
+            <button type="button" className="x" aria-label="Delete this take" title="Delete this take" disabled={!s.take?.id} onClick={() => s.take?.id && app.deleteTake(s.take.id)}>×</button>
+          </span>
+        )}
         <button type="button" className="btn" disabled={!s.take || s.recording} onClick={() => (s.playing ? app.stopTake() : app.playTake())}>
           {s.playing ? '■ Stop' : '▶ Play take'}
         </button>

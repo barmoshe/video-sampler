@@ -386,6 +386,19 @@ try {
     if (Math.abs(start - 0.25) > 0.03 || !slices) throw new Error(`start ${start}, slices ${slices}, under the cursor ${under}, canvas ${JSON.stringify(r)}, events ${JSON.stringify(await evaluate('window.__ev'))}`)
     return `start dragged to ${start.toFixed(2)}; a manual slice at ${slices} s`
   })
+  await step('capture: play three notes, Shift+Enter keeps them as a new take', async () => {
+    await evaluate("window.__vs.setKind('clip'); window.__vs.setClip({ clipId: window.__vs.store.get().clips[0].id, mode: 'classic' })")
+    const before = await S('s.takes.length')
+    for (const k of ['KeyA', 'KeyD', 'KeyG']) { await key(k, 'keyDown'); await sleep(150); await key(k, 'keyUp'); await sleep(150) }
+    await sleep(300)
+    await page('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Enter', key: 'Enter', modifiers: 8, windowsVirtualKeyCode: 13 })
+    await page('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Enter', key: 'Enter', modifiers: 8, windowsVirtualKeyCode: 13 })
+    await sleep(300)
+    const got = await S('`${s.takes.length} takes; current "${s.take?.name}" with ${s.take?.events.filter((e) => e.ev.type === "on").length} notes`')
+    // the phrase runs back while notes are under 4 s apart, so the previous step's notes may join it
+    if ((await S('s.takes.length')) !== before + 1 || (await S('s.take.events.filter((e) => e.ev.type === "on").length')) < 3) throw new Error(got)
+    return got
+  })
   await step('the Instrument look in light and dark (screenshots at 1470×832)', async () => {
     await evaluate("window.__vs.setKind('clip')")
     for (const mode of ['light', 'dark']) {

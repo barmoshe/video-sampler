@@ -229,3 +229,7 @@ button.key { padding: 0 0 6px; }
 /* the about dialog */
 .credits { margin: 0; padding-left: 18px; font-size: 12px; display: grid; gap: 3px; }
 .credits a { color: inherit; }
+
+/* takes in the header */
+.takes { display: inline-flex; align-items: center; gap: 2px; }
+.takes select { max-width: 190px; }

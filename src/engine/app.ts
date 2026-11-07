@@ -22,7 +22,7 @@ export const levelVelocity = (i: number) => Math.round(8 + (i * 119) / 15)
 import { Performer, type InstrumentState, type PlayEvent } from './performer'
 import { Stage } from './stage'
 import { createStore } from './store'
-import { midiToTake, takeDuration, takeToMidi, type Take, type TakeEvent } from './take'
+import { capturePhrase, midiToTake, takeDuration, takeToMidi, type Take, type TakeEvent } from './take'
 import type { Clip, InstrumentKind, LayoutMode, StageAspect } from './types'
 import { exportTake, type ExportOptions } from './export'
 
@@ -54,7 +54,8 @@ export interface AppState {
   velocity: number
   active: number[]
   recording: boolean
-  take: Take | null
+  take: Take | null // the current take (plays, exports)
+  takes: Take[] // every take in the project
   playing: boolean
   midiDevices: string[] | null
   bpm: number | null
@@ -73,7 +74,7 @@ export interface AppState {
 export const echoOf = (fx: FxSettings, bpm: number) => ({ time: delaySeconds(fx, bpm), feedback: fx.delay.feedback, level: fx.delay.level, decay: fx.reverb.decay, reverb: fx.reverb.level })
 
 /** What undo covers: the project's edits, not views or performance controls (tab, octave, velocity). */
-const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take'] as const
+const UNDO_KEYS = ['clip', 'pads', 'layers', 'bendRange', 'layouts', 'aspect', 'fit', 'scale', 'transport', 'loopLayers', 'sections', 'section', 'main', 'fx', 'take', 'takes'] as const
 /** What autosave keeps: the edits plus the views and settings a reload should come back to. */
 const SAVE_KEYS = [...UNDO_KEYS, 'kind', 'octave', 'velocity', 'pictureOffsetMs', 'latencyMode', 'padPlay'] as const
 type UndoDoc = Pick<AppState, (typeof UNDO_KEYS)[number]>
@@ -87,7 +88,7 @@ const initial = (): AppState => ({
   transport: defaultTransport(), loopLayers: [], redoLayers: [], looping: false, loopRec: false, bar: 0,
   main: { clipId: null, gain: 0.7, alpha: 1, place: 'behind' }, fx: defaultFx(),
   padPlay: { repeat: false, rate: 0.25, swing: 0, levels: false },
-  sections: [], section: 'A', queued: null, active: [], recording: false, take: null, playing: false,
+  sections: [], section: 'A', queued: null, active: [], recording: false, take: null, takes: [], playing: false,
   midiDevices: null, bpm: null, pictureOffsetMs: 50, latencyMode: 'tight', exporting: null, message: null, voices: 0, audioOn: false,
   savedAt: null, canUndo: false, canRedo: false,
 })
@@ -125,7 +126,12 @@ export class App {
       send: (evs) => { void this.engine!.events(evs) },
       frameOf: (t) => Math.round(t * this.ctx.sampleRate),
     })
-    this.performer.onPlay = (ev, t) => { if (this.rec && !this.replaying) this.rec.events.push({ t: t - this.rec.start, ev }) }
+    this.performer.onPlay = (ev, t) => {
+      if (this.replaying) return
+      if (this.rec) this.rec.events.push({ t: t - this.rec.start, ev })
+      this.captureBuf.push({ t, ev }) // Capture's always-on memory: the last two minutes
+      if (this.captureBuf.length > 4000 || this.captureBuf[0].t < t - 120) this.captureBuf = this.captureBuf.filter((e) => e.t >= t - 120).slice(-4000)
+    }
     void this.restore()
   }
 
@@ -365,6 +371,7 @@ export class App {
         octave: (d) => this.store.set((x) => ({ octave: Math.max(-5, Math.min(4, x.octave + d)) })),
         velocityStep: (d) => this.store.set((x) => ({ velocity: Math.max(1, Math.min(127, x.velocity + d)) })),
         record: () => this.toggleRecord(),
+        capture: () => this.capture(),
         loopRecord: () => this.loopRecord(),
         section: (i: number) => { const ids = [this.store.get().section, ...this.store.get().sections.map((x) => x.id)].sort(); if (ids[i]) this.switchSection(ids[i]) },
       }
@@ -713,6 +720,33 @@ export class App {
   }
 
   // ---------- takes ------------------------------------------------------------------------------
+  private captureBuf: TakeEvent[] = []
+
+  private addTake(t: Take) {
+    const take = { ...t, id: t.id ?? `t${Date.now().toString(36)}` }
+    this.store.set((s) => ({ take, takes: [...s.takes, take] }))
+  }
+
+  /** Keep what was just played as a take, without having pressed Record (Shift+Enter). */
+  capture() {
+    const got = capturePhrase(this.captureBuf, this.ctx.currentTime)
+    if (!got) { this.say('Nothing played in the last two minutes to capture.'); return }
+    const events = [...got.events]
+    if (this.mainOn) { // the bed was playing: the take starts it where it was at the phrase's start
+      const clip = this.clips.get(this.mainOn.clipId)
+      if (clip) events.unshift({ t: 0, ev: { type: 'main', clipId: clip.id, gain: this.store.get().main.gain, offset: (got.start - this.mainOn.at) % clip.duration, place: this.store.get().main.place } })
+    }
+    const s = this.store.get()
+    this.addTake({ name: `Capture ${new Date().toLocaleTimeString()}`, events, duration: takeDuration(events), hold: s.looping ? loopSeconds(s.transport) : undefined })
+    this.say(`Captured ${events.filter((e) => e.ev.type === 'on').length} notes as a take.`)
+  }
+
+  selectTake(id: string) { this.stopTake(); this.store.set((s) => ({ take: s.takes.find((t) => t.id === id) ?? s.take })) }
+  deleteTake(id: string) {
+    this.stopTake()
+    this.store.set((s) => { const takes = s.takes.filter((t) => t.id !== id); return { takes, take: s.take?.id === id ? takes.at(-1) ?? null : s.take } })
+  }
+
   toggleRecord() {
     if (this.rec) {
       const events = this.rec.events.filter((e) => e.t >= 0)
@@ -721,7 +755,8 @@ export class App {
       const shifted = events.map((e) => ({ t: Math.max(0, e.t - first), ev: e.ev }))
       this.rec = null
       const hold = this.store.get().looping ? loopSeconds(this.store.get().transport) : undefined
-      this.store.set({ recording: false, take: shifted.length ? { name: `Take ${new Date().toLocaleTimeString()}`, events: shifted, duration: takeDuration(shifted), hold } : this.store.get().take })
+      if (shifted.length) this.addTake({ name: `Take ${new Date().toLocaleTimeString()}`, events: shifted, duration: takeDuration(shifted), hold })
+      this.store.set({ recording: false })
     } else {
       this.stopTake()
       this.rec = { start: this.ctx.currentTime, events: [] }
@@ -761,7 +796,7 @@ export class App {
   private async loadMidi(f: File) {
     try {
       const take = await midiToTake(f, f.name.replace(/\.[^.]+$/, ''))
-      this.store.set({ take })
+      this.addTake(take)
       this.say(`${take.name}: ${take.events.filter((e) => e.ev.type === 'on').length} notes loaded as a take. Play it or export it.`)
     } catch (e) { this.say(`Could not read ${f.name}: ${(e as Error).message}`) }
   }

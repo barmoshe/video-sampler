@@ -4,7 +4,22 @@ import { Midi } from '@tonejs/midi'
 import type { PlayEvent } from './performer'
 
 export interface TakeEvent { t: number; ev: PlayEvent }
-export interface Take { name: string; events: TakeEvent[]; duration: number; hold?: number } // hold: looper layer tiles' hold (s)
+export interface Take { id?: string; name: string; events: TakeEvent[]; duration: number; hold?: number } // hold: looper layer tiles' hold (s)
+
+/**
+ * Capture (Ableton's Capture MIDI): the latest phrase from an always-on buffer of what was played,
+ * as a take. The phrase runs back from the last note while the gaps between notes stay under `gap`
+ * seconds. Times are audio-clock seconds; the take starts at the phrase's first note.
+ */
+export function capturePhrase(buf: TakeEvent[], now: number, gap = 4): { start: number; events: TakeEvent[] } | null {
+  const past = buf.filter((e) => e.t <= now)
+  const ons = past.filter((e) => e.ev.type === 'on')
+  if (!ons.length) return null
+  let i = ons.length - 1
+  while (i > 0 && ons[i].t - ons[i - 1].t < gap) i--
+  const start = ons[i].t
+  return { start, events: past.filter((e) => e.t >= start - 1e-3).map((e) => ({ t: Math.max(0, e.t - start), ev: e.ev })) }
+}
 
 export function takeDuration(events: TakeEvent[]): number {
   return events.length ? events[events.length - 1].t : 0
