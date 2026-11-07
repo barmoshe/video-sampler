@@ -1,49 +1,35 @@
-# Pack art (3D clips) — handoff, 2026-11-07 00:48
+# Pack art (3D clips): handoff, 2026-11-07 03:35
 
 Session: the Blender pack-art side session (no web, no downloads: bpy safety rule, knowledge/33 §33.9).
-Stopped on Bar's word ("stop for now"). Background render stopped; nothing running.
 
-## State right now
+## State
 
-- **scene.py does not run as it stands:** `build_cymbal` now calls `cymbal_mesh(name, R, bronze, parent=piv)`,
-  which is not written yet (I was mid-way through adding the shared helpers). Write it first: the cymbal
-  profile that used to be inline (top points (0.007,0.040) ... (R,0.0), thickness 0.0026 - 0.0013 r/R,
-  closed lathe, z shifted by -0.04, segs 128, sharp 60), scaled for R, so the hi-hat can reuse it.
-- Added and untested: `lathe(..., arc=(a0, a1))` (a capped partial lathe, for the tambourine's slots),
-  each drum head gets its own material copy (glow is in object space), shared materials `hand` and `rawhide`.
-- **Light and exposure solved (round 4):** the kit's `product` rig sat 2.5x the model's size away and
-  burned the floor; it is replaced by `RIG` in `studio()`: big soft area lights at about 6x the size
-  (key upper left, fill, thin rim, overhead) plus a spot washing the backdrop, near-neutral 6300-6600 K.
-  At exposure -1.6 the top of the frame measures `#ECE8DD` (target `#ECE8DE`); the default is now -1.35 so
-  the foreground floor is not grey. New flags: `--exposure`, `--wash`. Snare at -1.6 looks like a real
-  product shot (`scratchpad/render/r4/snare-rig-1.6/f0000.png`).
-- Round 3 verdict: marimba, snare and cymbal all read well; display-stand base was reflecting white,
-  now matte graphite (roughness 0.55, no coat).
+- `scene.py` builds all 26 instruments (`build_<id>`), one shared studio set, EEVEE by default. Every one
+  smoke-rendered (frames 0 and 4) and was judged on contact sheets over two rounds; the full renders are in
+  progress in background batches into the session scratchpad (`.../scratchpad/full/<id>/frames`).
+- `render.sh OUT id...` renders whole clips (frames only); `pack.py OUT` muxes them into `public/library/`
+  (MP4 per ART.md, poster = loudest frame, `manifest.json` as `{items: [...]}` in the shape `src/engine/library.ts`
+  reads, `CREDITS.md`) and writes `sheet.png` here. It keeps manifest entries that are not this pack's.
+- Light: big soft area lights about 6x the model's size away (key upper left, fill, thin rim, overhead), a spot
+  washing the backdrop, a sphere probe so metals reflect the sweep; exposure -1.35. The top of the frame measures
+  `#ECE8DD` at -1.6 against the `#ECE8DE` target.
+- Speed: render frame by frame (`frame_set` + still), about 2.3 s a frame; `render(animation=True)` took 20-36 s.
 
-## Open problem: full-clip speed
+## Look decisions made here (for Bar to overrule)
 
-Stills render at about 2 s a frame in EEVEE, but the full snare clip (`render(animation=True)`) took
-21-36 s a frame (14 of 27 frames done when stopped). Suspects: animation mode re-syncs or recompiles the
-materials with keyed node values every frame, or the GPU was busy. Try first: render the clip as a loop of
-`frame_set(f)` + `bb.render(...)` (the stills path, which measured 2 s), and time it.
+- Strikers come from behind and above (the player's side), graphite shafts with orange heads or tips; the
+  framing uses the instrument plus the striker's head, so shafts leave the frame at the top right.
+- Hands are a graphite mannequin hand (capsules), for clap, cajon, conga, bongo, frame drum, tambourine;
+  the kalimba gets a thumb only.
+- Mounted instruments sit on one shared graphite display stand (cymbal, hi-hat, tom, cowbell, tambourine,
+  frame drum, tubular glockenspiel).
+- Ocarina: looping orange breath puffs out of the window. Harp: C strings muted orange, F strings graphite.
+- Motion blur is off (EEVEE ghosted the rebound frame).
+- `pack.py` credits the art to Bar Builds and claims no licence for it (the recordings are CC0-1.0).
 
-## Next steps
+## Still off
 
-1. Read `r3/*/strip.png` and `views.png`; fix exposure; `eyes measure` with a spec of `#ECE8DE`,
-   `#2B2B30`, `#F2621B`; keep the best of the rounds (about one more round, then move on).
-2. Render one full clip (snare, 27 frames) and mux it to check timing and the loop.
-3. Write the other 20 builders: strikers come from behind and above (never between model and camera);
-   mounted items on the shared graphite display stand; graphite mannequin hands (capsules) for clap,
-   kalimba thumb, cajon, conga, bongo, frame drum, tambourine; ocarina = looping orange breath puffs;
-   harp C strings muted orange, F strings graphite.
-4. Render all 26 at 960×540 in background jobs under ~25 min each (jobs stop at 30 min).
-5. `pack.py` beside scene.py: mux per ART.md, poster = loudest frame as JPG, `public/library/manifest.json`
-   + `CREDITS.md` from `assets-src/audio/credits.json`, `sheet.png` of the 26 posters, under ~40 MB.
-6. Commit only `tools/library/render/` and `public/library/` on main (another session has uncommitted
-   `src/` edits there), push, add the "Pack art" line to `lab/video-sampler/STATUS.md`.
-7. Still off, to report: snare wires can't be seen from a 23° camera.
-
-## Added by the main session (2026-11-07)
-
-- Copied here from the side session's notes folder so it survives; the round-3 strips are `r3-*-strip.png`
-  beside it (not yet reviewed). `tools/check.mjs` empties `tools/out/` when it starts.
+- Snare wires can't be seen from a 23 degree camera; the snare only rings.
+- The piano reads as an action model (key, hammer, string); small parts in a wide frame.
+- Wide instruments (snare, kick, strumstick, piano) fill the square crop, not a 9:16 one.
+- Hands read as mannequin parts, not hands with skin.

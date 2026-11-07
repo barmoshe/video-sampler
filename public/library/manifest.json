@@ -1,0 +1,499 @@
+{
+ "about": "The bundled pack (ADR 0770): CC0 recordings from VCSL, each with a 3D-rendered clip made for it.",
+ "items": [
+  {
+   "id": "marimba",
+   "name": "Marimba",
+   "kind": "pitched",
+   "file": "marimba.mp4",
+   "poster": "marimba.jpg",
+   "duration": 2.468,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Marimba/Marimba_hit_Outrigger_C4_med_01.wav",
+    "source": "Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_C4_med_01.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "kalimba",
+   "name": "Kalimba",
+   "kind": "pitched",
+   "file": "kalimba.mp4",
+   "poster": "kalimba.jpg",
+   "duration": 2.393,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Plucked%20Idiophones/Kalimba%2C%20Tanzania/MBira3_pluck_Main_C%234_k5_50_100_rr2.wav",
+    "source": "Idiophones/Plucked Idiophones/Kalimba, Tanzania/MBira3_pluck_Main_C#4_k5_50_100_rr2.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "vibraphone",
+   "name": "Vibraphone",
+   "kind": "pitched",
+   "file": "vibraphone.mp4",
+   "poster": "vibraphone.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Vibraphone/Hard%20Mallets/Vibes_hard_B3_v3_rr1_Main.wav",
+    "source": "Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_B3_v3_rr1_Main.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "xylophone",
+   "name": "Xylophone",
+   "kind": "pitched",
+   "file": "xylophone.mp4",
+   "poster": "xylophone.jpg",
+   "duration": 1.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Xylophone/Hard%20Mallets/Xylo_Hard_C4_ff_01_far.wav",
+    "source": "Idiophones/Struck Idiophones/Xylophone/Hard Mallets/Xylo_Hard_C4_ff_01_far.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "piano",
+   "name": "Grand piano",
+   "kind": "pitched",
+   "file": "piano.mp4",
+   "poster": "piano.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Chordophones/Zithers/Grand%20Piano%2C%20Steinway%20B/NoSus/JHPiano_NoSus_Close_C4_vl3_rr1.wav",
+    "source": "Chordophones/Zithers/Grand Piano, Steinway B/NoSus/JHPiano_NoSus_Close_C4_vl3_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "harp",
+   "name": "Folk harp",
+   "kind": "pitched",
+   "file": "harp.mp4",
+   "poster": "harp.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Chordophones/Composite%20Chordophones/Folk%20Harp/EWHarp_Normal_C4_v3_RR1.wav",
+    "source": "Chordophones/Composite Chordophones/Folk Harp/EWHarp_Normal_C4_v3_RR1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "chimes",
+   "name": "Hand chime",
+   "kind": "pitched",
+   "file": "chimes.mp4",
+   "poster": "chimes.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Hand%20Chimes/sus_C4_r01_main.wav",
+    "source": "Idiophones/Struck Idiophones/Hand Chimes/sus_C4_r01_main.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "balafon",
+   "name": "Balafon",
+   "kind": "pitched",
+   "file": "balafon.mp4",
+   "poster": "balafon.jpg",
+   "duration": 1.126,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Balafon/Hard%20Mallet/EthnicXylo_hardM_C4_vl2_rr1_Mid.wav",
+    "source": "Idiophones/Struck Idiophones/Balafon/Hard Mallet/EthnicXylo_hardM_C4_vl2_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "ocarina",
+   "name": "Ocarina",
+   "kind": "pitched",
+   "file": "ocarina.mp4",
+   "poster": "ocarina.jpg",
+   "duration": 2.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Aerophones/Edge-blown%20Aerophones/Ocarina%2C%20Typical/Sustains/SusVib/StdOcarina_SusVib_C4.wav",
+    "source": "Aerophones/Edge-blown Aerophones/Ocarina, Typical/Sustains/SusVib/StdOcarina_SusVib_C4.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "glockenspiel",
+   "name": "Tubular glockenspiel",
+   "kind": "pitched",
+   "file": "glockenspiel.mp4",
+   "poster": "glockenspiel.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Tubular%20Glockenspiel/C1_medium1.wav",
+    "source": "Idiophones/Struck Idiophones/Tubular Glockenspiel/C1_medium1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "strumstick",
+   "name": "Strumstick",
+   "kind": "pitched",
+   "file": "strumstick.mp4",
+   "poster": "strumstick.jpg",
+   "duration": 2.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Chordophones/Composite%20Chordophones/Strumstick/Finger/Strumstick_Finger_Str2_Main_D3_vl2_rr1.wav",
+    "source": "Chordophones/Composite Chordophones/Strumstick/Finger/Strumstick_Finger_Str2_Main_D3_vl2_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "kick",
+   "name": "Bass drum",
+   "kind": "drum",
+   "file": "kick.mp4",
+   "poster": "kick.jpg",
+   "duration": 1.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Bass%20Drum%202/bassdrum_hit_f.wav",
+    "source": "Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_f.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "snare",
+   "name": "Snare",
+   "kind": "drum",
+   "file": "snare.mp4",
+   "poster": "snare.jpg",
+   "duration": 0.9,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%201/Snare2_HitNS_v5_rr1_Mid.wav",
+    "source": "Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v5_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "hihat",
+   "name": "Hi-hat",
+   "kind": "drum",
+   "file": "hihat.mp4",
+   "poster": "hihat.jpg",
+   "duration": 0.6,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Hi-Hat%20Cymbal/HiHat_HitC_v3_rr1_Mid.wav",
+    "source": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "clap",
+   "name": "Clap",
+   "kind": "drum",
+   "file": "clap.mp4",
+   "poster": "clap.jpg",
+   "duration": 0.7,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Claps/Clap_rr1.wav",
+    "source": "Idiophones/Struck Idiophones/Claps/Clap_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "shaker",
+   "name": "Shaker",
+   "kind": "drum",
+   "file": "shaker.mp4",
+   "poster": "shaker.jpg",
+   "duration": 0.236,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Shaker%2C%20Small/Mid_ShakerDouble_Down_rr1.wav",
+    "source": "Idiophones/Struck Idiophones/Shaker, Small/Mid_ShakerDouble_Down_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "tambourine",
+   "name": "Tambourine",
+   "kind": "drum",
+   "file": "tambourine.mp4",
+   "poster": "tambourine.jpg",
+   "duration": 1.2,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Tambourine%201/Tamb1_Hit_v2_rr1_Mid.wav",
+    "source": "Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "cajon",
+   "name": "Cajon",
+   "kind": "drum",
+   "file": "cajon.mp4",
+   "poster": "cajon.jpg",
+   "duration": 1,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Cajon/Cajon_hit1_f_rr1.wav",
+    "source": "Idiophones/Struck Idiophones/Cajon/Cajon_hit1_f_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "conga",
+   "name": "Conga",
+   "kind": "drum",
+   "file": "conga.mp4",
+   "poster": "conga.jpg",
+   "duration": 1.047,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Conga/Conga_HitN_v1_rr1_Sum.wav",
+    "source": "Membranophones/Struck Membranophones/Conga/Conga_HitN_v1_rr1_Sum.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "bongo",
+   "name": "Bongo",
+   "kind": "drum",
+   "file": "bongo.mp4",
+   "poster": "bongo.jpg",
+   "duration": 0.9,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Bongos/BongoH_Hit1_v3_rr1_Mid.wav",
+    "source": "Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v3_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "tom",
+   "name": "Tom",
+   "kind": "drum",
+   "file": "tom.mp4",
+   "poster": "tom.jpg",
+   "duration": 1.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Tom%201/Mallet/TomH_HitM_v3_rr1_Mid.wav",
+    "source": "Membranophones/Struck Membranophones/Tom 1/Mallet/TomH_HitM_v3_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "cymbal",
+   "name": "Cymbal",
+   "kind": "drum",
+   "file": "cymbal.mp4",
+   "poster": "cymbal.jpg",
+   "duration": 3,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Suspended%20Cymbal%201/susCymb1_hit_f1.wav",
+    "source": "Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_f1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "cowbell",
+   "name": "Cowbell",
+   "kind": "drum",
+   "file": "cowbell.mp4",
+   "poster": "cowbell.jpg",
+   "duration": 0.8,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Cowbells/Cowbell1_Hit_v3_rr1_Mid.wav",
+    "source": "Idiophones/Struck Idiophones/Cowbells/Cowbell1_Hit_v3_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "claves",
+   "name": "Claves",
+   "kind": "drum",
+   "file": "claves.mp4",
+   "poster": "claves.jpg",
+   "duration": 0.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Claves/Claves1_Hit_v2_rr1_Mid.wav",
+    "source": "Idiophones/Struck Idiophones/Claves/Claves1_Hit_v2_rr1_Mid.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "woodblock",
+   "name": "Woodblock",
+   "kind": "drum",
+   "file": "woodblock.mp4",
+   "poster": "woodblock.jpg",
+   "duration": 0.5,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Idiophones/Struck%20Idiophones/Woodblock/wood_click_f_rr1.wav",
+    "source": "Idiophones/Struck Idiophones/Woodblock/wood_click_f_rr1.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  },
+  {
+   "id": "framedrum",
+   "name": "Frame drum",
+   "kind": "drum",
+   "file": "framedrum.mp4",
+   "poster": "framedrum.jpg",
+   "duration": 1.164,
+   "credits": {
+    "license": "CC0-1.0",
+    "author": "VCSL contributors",
+    "url": "https://raw.githubusercontent.com/sgossner/VCSL/master/Membranophones/Struck%20Membranophones/Frame%20Drum/HDrumL_Hand_rr1_Sum.wav",
+    "source": "Membranophones/Struck Membranophones/Frame Drum/HDrumL_Hand_rr1_Sum.wav",
+    "repo": "https://github.com/sgossner/VCSL"
+   },
+   "art": {
+    "made": "3D render, procedural Blender (tools/library/render/scene.py)",
+    "by": "Bar Builds"
+   }
+  }
+ ]
+}

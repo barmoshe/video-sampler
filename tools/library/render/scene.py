@@ -234,6 +234,7 @@ def lathe_bm(bm, prof, segs=48, M=None, closed=False, arc=None):
 def lathe(name, prof, m=None, segs=48, closed=False, sharp=35, arc=None, **kw):
     me, bm = bpy.data.meshes.new(name), bmesh.new()
     lathe_bm(bm, prof, segs, None, closed, arc)
+    if arc: bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me)
     bm.free()
     return finish(name, me, m, sharp=sharp, **kw)
@@ -429,7 +430,7 @@ def M():
         "hickory": grain(mat("hickory", "#D3B891", 0.5, coat=0.15), "#D9C29E", "#BFA27A", scale=10, along="Z", across="X", bump=0.02),
         "rattan": grain(mat("rattan", "#CDB58C", 0.55), "#D4BE97", "#B89C70", scale=14, along="Z", across="X", bump=0.02),
         "head": noise_rough(mat("head", "#F4F1EA", 0.6), 0.6, 0.12, 60),
-        "hand": mat("hand", "#303035", 0.62, sheen=0.25),
+        "hand": mat("hand", "#4A4A50", 0.55, sheen=0.3),
         "rawhide": noise_rough(mat("rawhide", "#D9C39C", 0.55, sss=0.05), 0.55, 0.15, 25),
     }
 
@@ -629,6 +630,18 @@ def build_snare(C, mats):
     stick(C, mats, "stick", hit, (0.25, 0.75, 0.50), angle=12)
 
 
+def cymbal_mesh(name, R, m, parent=None, loc=(0, 0, 0), rot=(0, 0, 0)):
+    """A cymbal (bell, bow, edge, thinning outward) with the bell's top at z = 0 and the edge at -0.186 R."""
+    k = R / 0.215
+    t = lambda r: (0.0026 - 0.0013 * r / R) * max(k, 0.7)
+    topp = [(0.007, 0.040), (0.025, 0.0395), (0.045, 0.035), (0.058, 0.026), (0.068, 0.018), (0.09, 0.0145),
+            (0.13, 0.0105), (0.17, 0.0065), (0.20, 0.0028), (0.215, 0.0)]
+    topp = [(max(0.0065, r * k), z * k) for r, z in topp]
+    prof = topp + [(r, z - t(r)) for r, z in reversed(topp)]
+    return lathe(name, [(r, z - 0.040 * k) for r, z in prof], m, segs=128, closed=True, parent=parent, sharp=60,
+                 loc=loc, rot=rot)
+
+
 def build_cymbal(C, mats, R=0.215, top=0.30, tilt=12.0, mallet_hit=True, name="cymbal"):
     display_stand(C, mats, top - 0.013)
     piv = empty(name + "_pivot", (0, 0, top), rot=(math.radians(-tilt), 0, math.radians(15)))
@@ -648,6 +661,789 @@ def build_cymbal(C, mats, R=0.215, top=0.30, tilt=12.0, mallet_hit=True, name="c
     if mallet_hit:
         mallet(C, mats, "mallet", hit, (0.55, 0.45, 0.55), length=0.26, head_r=0.018, angle=12, contact_normal=nrm)
     return piv, cym
+
+
+# ---------------------------------------------------------------- more shared parts
+
+CH = Vector((CAM_DIR.x, CAM_DIR.y, 0)).normalized()   # toward the camera, flat
+RIGHT = Vector((-CH.y, CH.x, 0))                      # the frame's right, flat
+BACK = -CH                                            # where the players stand
+UP, DOWN = Vector((0, 0, 1)), Vector((0, 0, -1))
+FROM_BEHIND = Vector((0.25, 0.75, 0.50)).normalized()  # the pack's stick direction (grip behind, above, right)
+CYM_TOP = [(0.007, 0.040), (0.025, 0.0395), (0.045, 0.035), (0.058, 0.026), (0.068, 0.018), (0.09, 0.0145),
+           (0.13, 0.0105), (0.17, 0.0065), (0.20, 0.0028), (0.215, 0.0)]
+
+
+def cym_top_z(R, r):
+    """Height of a cymbal_mesh's top surface at radius r (object space, bell top = 0)."""
+    k = R / 0.215
+    pts = [(rr * k, z * k) for rr, z in CYM_TOP]
+    for (r0, z0), (r1, z1) in zip(pts, pts[1:]):
+        if r0 <= r <= r1: return z0 + (z1 - z0) * (r - r0) / (r1 - r0) - 0.040 * k
+    return -0.040 * k
+
+
+def quat_to(v):
+    return Vector((0, 0, 1)).rotation_difference(Vector(v).normalized())
+
+
+def set_quat(ob, q):
+    ob.rotation_mode = "QUATERNION"
+    ob.rotation_quaternion = q
+    return ob
+
+
+def flat_dir(v):
+    return Vector((v[0], v[1], 0)).normalized()
+
+
+def tube_path(name, pts, r, m, segs=16, flat=1.0, side=(0, 1, 0), parent=None, r_fn=None):
+    """A tube along a polyline; `flat` squashes the cross-section along `side`."""
+    bm, pts, side = bmesh.new(), [Vector(p) for p in pts], Vector(side)
+    n, rings = len(pts), []
+    for i, p in enumerate(pts):
+        t = (pts[min(i + 1, n - 1)] - pts[max(i - 1, 0)]).normalized()
+        a = (side - t * side.dot(t)).normalized()
+        b = t.cross(a)
+        rr = r_fn(i / (n - 1)) if r_fn else r
+        rings.append([bm.verts.new(p + (a * math.cos(TAU * j / segs) * flat + b * math.sin(TAU * j / segs)) * rr)
+                      for j in range(segs)])
+    for i in range(n - 1):
+        A, B = rings[i], rings[i + 1]
+        for j in range(segs): bm.faces.new((A[j], A[(j + 1) % segs], B[(j + 1) % segs], B[j]))
+    bm.faces.new(rings[0][::-1])
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    return finish(name, me, m, parent=parent)
+
+
+def grid_mesh(name, w, h, nx, ny):
+    verts = [(-w / 2 + w * i / nx, -h / 2 + h * j / ny, 0) for j in range(ny + 1) for i in range(nx + 1)]
+    faces = [(j * (nx + 1) + i, j * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i)
+             for j in range(ny) for i in range(nx)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    return me
+
+
+def frustum(name, p0, p1, w0, w1, d0, d1, side, m, parent=None, bevel=0.006):
+    """A tapered box from p0 to p1: width along `side`, depth behind the front face (the face toward a x side)."""
+    p0, p1, side = Vector(p0), Vector(p1), Vector(side).normalized()
+    a = (p1 - p0).normalized()
+    nn = a.cross(side).normalized()
+    bm = bmesh.new()
+    vs = []
+    for p, w, d in ((p0, w0, d0), (p1, w1, d1)):
+        vs += [bm.verts.new(p + side * w / 2), bm.verts.new(p - side * w / 2),
+               bm.verts.new(p - side * w / 2 - nn * d), bm.verts.new(p + side * w / 2 - nn * d)]
+    for f in ((0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+        bm.faces.new([vs[i] for i in f])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = finish(name, me, m, parent=parent, sharp=30)
+    if bevel: bb.modifier(ob, "BEVEL", width=bevel, segments=3, limit_method="ANGLE", harden_normals=True)
+    return ob
+
+
+def hand(name, mats, mirror=False, curl=(10, 12, 10), spread=5.0, thumb_out=1.0, m=None):
+    """A graphite mannequin hand in its own space: palm centre at the origin facing -Z, fingers along +Y,
+    thumb on -X (+X when mirrored). Returns (root empty, info with local contact points)."""
+    m = m or mats["hand"]
+    sx = -1.0 if mirror else 1.0
+    root = empty(name)
+    palm = box(name + "_palm", (0.082, 0.090, 0.026), m.copy(), bevel=0.011, seg=4, parent=root)
+    parts = [palm]
+    specs = [(-0.0285, (0.042, 0.025, 0.020), 0.0085, -spread), (-0.0095, (0.047, 0.029, 0.022), 0.0089, -spread / 3),
+             (0.0095, (0.043, 0.027, 0.021), 0.0084, spread / 3), (0.0280, (0.034, 0.021, 0.018), 0.0073, spread)]
+    tip = None
+    for k, (x, lens, r, spr) in enumerate(specs):
+        p = Vector((sx * x, 0.038, -0.001))
+        d = Quaternion((0, 0, 1), math.radians(-sx * spr)) @ Vector((0, 1, 0))
+        for j, L in enumerate(lens):
+            d = Quaternion((1, 0, 0), -math.radians(curl[j])) @ d
+            q = p + d * L
+            parts.append(rod(f"{name}_f{k}{j}", p, q, r, m, r1=r * 0.94, parent=root))
+            p, r = q, r * 0.94
+        if k == 1: tip = p + d * (r * 0.3) - Vector((0, 0, r * 0.95))
+    tb = Vector((sx * -0.034, -0.022, -0.004))
+    parts.append(rod(name + "_thenar", Vector((sx * -0.020, -0.032, -0.002)), tb, 0.0135, m, parent=root))
+    d = Vector((sx * -0.62 * thumb_out, 0.72, -0.30)).normalized()
+    p, r = tb, 0.0115
+    for j, L in enumerate((0.036, 0.029, 0.024)):
+        q = p + d * L
+        parts.append(rod(f"{name}_t{j}", p, q, r, m, r1=r * 0.92, parent=root))
+        p, r = q, r * 0.92
+        d = (d + Vector((sx * 0.25, 0.10, -0.05))).normalized()
+    parts.append(rod(name + "_wrist", Vector((0, -0.036, 0.001)), Vector((0, -0.088, 0.004)), 0.0235, m, r1=0.021, parent=root))
+    return root, {"palm": Vector((0, 0.004, -0.0135)), "tip": tip, "wrist": Vector((0, -0.07, 0.003)), "thumb": p,
+                  "palm_obj": palm, "parts": parts}
+
+
+def place_hand(C, mats, name, contact, normal, fingers, at="palm", mirror=False, curl=(10, 12, 10), lift_deg=16.0,
+               rise=0.03, spread=5.0, fit="palm"):
+    """A hand whose `at` point touches `contact` on frame 0, palm facing `normal`, fingers toward `fingers`;
+    it lifts off from the wrist (rotation + a rise against the normal) and comes back for the loop."""
+    root, info = hand(name, mats, mirror, curl, spread)
+    n, fy = Vector(normal).normalized(), Vector(fingers)
+    y = (fy - n * fy.dot(n)).normalized()
+    z = -n
+    x = y.cross(z)
+    R3 = Matrix((x, y, z)).transposed()
+    set_quat(root, R3.to_quaternion())
+    root.location = Vector(contact) - R3 @ info[at]
+    piv = empty(name + "_pivot", root.location + R3 @ info["wrist"])
+    keep_parent(root, piv)
+    C.lift(piv, x, lift_deg, -n * rise)
+    C.fit += info["parts"] if fit == "all" else [info["palm_obj"]]
+    info.update(R=R3, root=root, piv=piv)
+    return info
+
+
+def uniform_glow(C, m, gain=1.5, power=1.6):
+    C.glow(add_glow(m, (0, 0, 0), 50.0), gain=gain, power=power)
+
+
+def glow_at(C, ob, world, radius, gain=2.2, power=1.6):
+    """Give ob its own copy of its material, glowing around a world point."""
+    m = ob.data.materials[0].copy()
+    ob.data.materials[0] = m
+    C.glow(add_glow(m, local_pt(ob, world), radius), gain=gain, power=power)
+    return m
+
+
+# ---------------------------------------------------------------- the other twenty
+
+def build_kalimba(C, mats):
+    maple = grain(mat("maple", "#C9A77C", 0.5, coat=0.25), "#CCAA7E", "#BD9A6B", scale=34, along="Y", across="X", distort=2.5)
+    Wb, Lb, Hb = 0.13, 0.17, 0.045
+    body = box("kalimba_body", (Wb, Lb, Hb), maple, bevel=0.007, seg=4, loc=(0, 0, Hb / 2 + 0.004))
+    feet = [lathe(f"kfoot{i}", cyl_prof(0.004, 0.006), mats["rubber"], segs=16, loc=(sx * 0.05, sy * 0.07, 0))
+            for i, (sx, sy) in enumerate(((1, 1), (1, -1), (-1, 1), (-1, -1)))]
+    top = Hb + 0.004
+    hole = lathe("sound_hole", cyl_prof(0.0012, 0.017), mats["graphite"], segs=48, loc=(0, -0.055, top - 0.0008))
+    saddle = box("saddle", (0.105, 0.010, 0.005), maple, bevel=0.0015, loc=(0, -0.028, top + 0.0025))
+    bridge = rod("bridge", (-0.053, -0.028, top + 0.0075), (0.053, -0.028, top + 0.0075), 0.0028, mats["steel"], kind="cyl")
+    zt = top + 0.0075 + 0.0028 + 0.0008
+    bar = rod("press_bar", (-0.05, -0.042, zt + 0.0035), (0.05, -0.042, zt + 0.0035), 0.0026, mats["steel"], kind="cyl")
+    screws = [rod(f"screw{s}", (s * 0.036, -0.042, top), (s * 0.036, -0.042, zt + 0.006), 0.0018, mats["chrome"], kind="cyl")
+              for s in (-1, 1)]
+    C.fit += [body, hole, saddle, bridge, bar] + feet + screws
+    C.ground += feet
+    pluck = None
+    for i in range(9):
+        x = (i - 4) * 0.0108
+        Lf = 0.030 + 0.042 * (1 - abs(i - 4) / 4)
+        y0, y1 = -0.048, -0.028 + Lf
+        m = mats["steel"] if i != 5 else mats["steel"].copy()
+        t = box(f"tine{i}", (0.0056, y1 - y0, 0.0016), m, bevel=0.0005, seg=2, cuts=16 if i == 5 else 0, cut_axis="Y",
+                loc=(x, (y0 + y1) / 2, zt))
+        C.fit.append(t)
+        if i == 5: pluck = (t, x, y0, y1, Lf)
+    t, x, y0, y1, Lf = pluck
+    yc = (y0 + y1) / 2
+    shape(t, "bend", lambda co: (0, 0, 0.004 * max(0.0, (co.y + yc + 0.028) / Lf) ** 2))
+    C.ring(t.data.shape_keys.key_blocks["bend"], 12.0, power=1.2)
+    tip = Vector((x, y1 - 0.006, zt + 0.0008))
+    C.glow(add_glow(t.data.materials[0], local_pt(t, tip), 0.035), gain=2.6)
+    # the thumb: a pad on the tine's tip, the joint behind and above
+    u1, u2 = Vector((0.15, 0.75, 0.55)).normalized(), Vector((0.15, 0.55, 0.85)).normalized()
+    c0 = tip + Vector((0, 0, 0.0095))
+    j1 = c0 + u1 * 0.028
+    j2 = j1 + u2 * 0.036
+    piv = empty("thumb_pivot", j2)
+    parts = [rod("thumb_d", c0 - u1 * 0.004, j1, 0.0095, mats["hand"], r1=0.0105),
+             rod("thumb_p", j1, j2, 0.0108, mats["hand"], r1=0.0125),
+             rod("thumb_b", j2, j2 + Vector((0.2, 0.5, 0.8)).normalized() * 0.03, 0.0130, mats["hand"], r1=0.016)]
+    for o in parts: keep_parent(o, piv)
+    C.fit.append(parts[0])
+    C.lift(piv, UP.cross(c0 - j2).normalized() * -1, 10.0, Vector((0, 0.012, 0.010)))
+
+
+def build_piano(C, mats):
+    ivory = mat("key_white", "#F5F3EE", 0.25, coat=0.4)
+    ebony = mat("key_black", "#1F1F23", 0.22, coat=0.5)
+    spruce = grain(mat("spruce", "#D9C29A", 0.6), "#DEC8A2", "#C4A97E", scale=20, along="Y", across="X", bump=0.01)
+    bed = box("keybed", (0.11, 0.33, 0.03), mats["graphite"], bevel=0.003, loc=(0, 0.035, 0.015))
+    rail = box("balance_rail", (0.11, 0.012, 0.004), mats["felt"], bevel=0.001, loc=(0, 0.03, 0.032))
+    zk = 0.034
+    parts = [bed, rail]
+    def white(name, x, parent=None, off=(0, 0, 0)):
+        o = Vector(off)
+        top = box(name + "_top", (0.0225, 0.150, 0.010), ivory, bevel=0.0012, loc=Vector((x, -0.060, zk + 0.023)) - o, parent=parent)
+        body = box(name + "_body", (0.021, 0.30, 0.018), spruce, bevel=0.001, loc=Vector((x, 0.0125, zk + 0.009)) - o, parent=parent)
+        return [top, body]
+    parts += white("key_b", -0.0235) + white("key_d", 0.0235)
+    parts.append(box("key_cs", (0.012, 0.095, 0.012), ebony, bevel=0.0015, loc=(0.01175, -0.0375, zk + 0.034)))
+    kp = empty("key_c_pivot", (0, 0.03, zk))
+    set_quat(kp, Quaternion((1, 0, 0), math.radians(3.5)))
+    parts += white("key_c", 0.0, parent=kp, off=(0, 0.03, zk))
+    # hammer, built struck (head on the string); it falls back about its flange
+    P = Vector((0, 0.255, 0.085))
+    H = Vector((0, 0.135, 0.108))
+    flange = box("flange", (0.03, 0.02, 0.03), mats["graphite"], bevel=0.002, loc=P - Vector((0, 0, 0.012)))
+    post = box("hammer_rail", (0.11, 0.015, 0.06), mats["graphite"], bevel=0.002, loc=(0, 0.27, 0.045))
+    hp = empty("hammer_pivot", P)
+    shank = rod("shank", P, H, 0.003, spruce, kind="cyl")
+    molding = box("molding", (0.013, 0.02, 0.014), spruce, bevel=0.002, loc=H + Vector((0, 0, 0.004)))
+    felt = rod("hammer_felt", H + Vector((0, 0, 0.010)), H + Vector((0, 0, 0.026)), 0.0085, mats["yarn"])
+    for o in (shank, molding, felt): keep_parent(o, hp)
+    zs = H.z + 0.026 + 0.0085 + 0.0009
+    string = rod("string", (0, 0.035, zs), (0, 0.30, zs), 0.0009, mats["steel"].copy(), kind="cyl", mids=30)
+    agraffe = box("agraffe", (0.018, 0.012, 0.012), mats["chrome"], bevel=0.002, loc=(0, 0.035, zs - 0.006))
+    bridge = box("bridge", (0.04, 0.015, zs - 0.03), spruce, bevel=0.002, loc=(0, 0.30, (zs - 0.03) / 2 + 0.03))
+    pin = rod("bridge_pin", (0, 0.298, zs - 0.004), (0, 0.298, zs + 0.006), 0.0015, mats["chrome"], kind="cyl")
+    parts += [flange, post, felt, string, agraffe, bridge, pin]
+    shape(string, "bow", lambda co: (0, 0, 0.0016 * math.sin(math.pi * min(1, max(0, (co.y - 0.035) / 0.265)))))
+    C.ring(string.data.shape_keys.key_blocks["bow"], 14.0, power=1.1)
+    C.glow(add_glow(string.data.materials[0], (0, H.y, zs), 0.06), gain=4.0)
+    C.lift(kp, (1, 0, 0), -3.5)
+    C.lift(hp, (1, 0, 0), 16.0)
+    C.fit += parts
+    C.ground.append(bed)
+
+
+def build_harp(C, mats):
+    wood = grain(mat("harp_wood", "#B98B5C", 0.45, coat=0.35), "#C29468", "#9E7247", scale=14, along="Z", across="X")
+    grp = set_quat(empty("harp"), Quaternion((0, 0, 1), math.radians(-108)))
+    zn = lambda x: 0.84 - 0.10 * (x / 0.48) + 0.06 * math.sin(TAU * x / 0.48)
+    zsb = lambda x: 0.04 + (x - 0.10) * (0.70 / 0.38)
+    box_ = frustum("soundbox", (0.10, 0, 0.035), (0.48, 0, 0.74), 0.20, 0.08, 0.10, 0.04, (0, 1, 0), wood, parent=grp)
+    neck = tube_path("neck", [(x, 0, zn(x) + 0.028) for x in [i * 0.52 / 20 - 0.02 for i in range(21)]], 0.030, wood,
+                     flat=0.55, parent=grp)
+    pillar = tube_path("pillar", [(0.012 * math.sin(math.pi * t), 0, 0.03 + t * (zn(0) - 0.0)) for t in [i / 16 for i in range(17)]],
+                       0.019, wood, parent=grp)
+    base = box("harp_base", (0.17, 0.12, 0.035), wood, bevel=0.006, loc=(0.06, 0, 0.0175), parent=grp)
+    C.fit += [box_, neck, pillar, base]
+    C.ground.append(base)
+    colors = {0: mat("string_c", "#D98A5B", 0.35), 3: mats["graphite"]}
+    nylon = mat("nylon", "#EDE5D3", 0.3)
+    pl = None
+    for i in range(20):
+        x = 0.14 + i * 0.0165
+        zb, zt = zsb(x) + 0.004, zn(x) + 0.002
+        m = colors.get(i % 7, nylon)
+        if i == 7: m = m.copy()
+        s = rod(f"str{i}", (x, 0, zb), (x, 0, zt), 0.0019 if i < 10 else 0.0015, m, kind="cyl", mids=30 if i == 7 else 0, parent=grp, segs=8)
+        pin = rod(f"tpin{i}", (x, 0.022, zt + 0.02), (x, -0.004, zt + 0.02), 0.0022, mats["chrome"], kind="cyl", parent=grp, segs=8)
+        C.fit.append(s)
+        if i == 7: pl = (s, x, zb, zt)
+    s, x, zb, zt = pl
+    shape(s, "bow", lambda co: (0, 0.008 * math.sin(math.pi * min(1, max(0, (co.z - zb) / (zt - zb)))), 0))
+    C.ring(s.data.shape_keys.key_blocks["bow"], 8.0, power=1.1)
+    C.glow(add_glow(s.data.materials[0], (x, 0, zb + (zt - zb) * 0.35), 0.25), gain=4.0)
+
+
+def build_chimes(C, mats):
+    brass = mat("brass", "#C9A55E", 0.3, 1.0)
+    rz = math.atan2(RIGHT.y, RIGHT.x)
+    grp = set_quat(empty("chime", (0, 0, 0.03)), Quaternion((0, 0, 1), rz) @ Quaternion((0, 1, 0), math.radians(12)))
+    handle = lathe("handle", cyl_prof(0.10, 0.0145, bevel=0.004), mats["rubber"], segs=32, parent=grp)
+    yoke = box("yoke", (0.040, 0.030, 0.020), mats["chrome"], bevel=0.003, loc=(0, 0, 0.110), parent=grp)
+    tube = lathe("chime_tube", tube_prof(0.30, 0.0175, 0.0155), brass.copy(), segs=64, loc=(0, 0, 0.12), parent=grp)
+    cap = lathe("chime_plug", cyl_prof(0.006, 0.0172), brass, segs=64, loc=(0, 0, 0.118), parent=grp)
+    cp = empty("clapper_pivot", (0.022, 0, 0.112), parent=grp)
+    arm = rod("clapper_arm", (0, 0, 0), (0.0065, 0, 0.063), 0.0018, mats["chrome"], kind="cyl", parent=cp)
+    ball = sphere("clapper", 0.011, mats["orange"], loc=(0.0065, 0, 0.063), parent=cp)
+    C.fit += [handle, yoke, tube, cap, ball]
+    C.glow(add_glow(tube.data.materials[0], (0.0175, 0, 0.055), 0.05), gain=2.0)
+    C.lift(grp, Quaternion((0, 0, 1), rz) @ Vector((0, 1, 0)), -12.0)
+    C.lift(cp, (0, 1, 0), 28.0)
+    C.shiver(tube, (1, 0, 0), 0.0007, 14.0)
+
+
+def build_ocarina(C, mats):
+    clay = noise_rough(mat("ocarina_glaze", "#B5744F", 0.3, coat=0.5, coat_rough=0.1), 0.3, 0.1, 30)
+    prof = [(0, -0.058), (0.016, -0.056), (0.028, -0.048), (0.036, -0.032), (0.039, -0.010), (0.038, 0.010),
+            (0.033, 0.028), (0.024, 0.043), (0.013, 0.054), (0, 0.058)]
+    zc = 0.039 * 0.78 + 0.001
+    body = lathe("ocarina", prof, clay, segs=64, loc=(0, 0, zc), rot=(0, math.radians(90), 0))
+    body.scale = (0.78, 1, 1)
+    rz = math.atan2(RIGHT.y, RIGHT.x) + math.radians(15)
+    grp = set_quat(empty("ocarina_grp"), Quaternion((0, 0, 1), rz))
+    body.parent = grp
+    rr = lambda z: next((r0 + (r1 - r0) * (z - z0) / (z1 - z0) for (r0, z0), (r1, z1) in zip(prof, prof[1:]) if z0 <= z <= z1), 0)
+    surf = lambda x: zc + rr(x) * 0.78
+    mouth = box("mouthpiece", (0.036, 0.024, 0.012), clay, bevel=0.005, loc=(0.066, 0, surf(0.048) - 0.004), parent=grp)
+    window = box("window", (0.010, 0.013, 0.004), mats["graphite"], bevel=0.001, loc=(0.034, 0, surf(0.034) - 0.0008),
+                 rot=(0, math.radians(-14), 0), parent=grp)
+    holes = [lathe(f"fhole{i}", cyl_prof(0.002, 0.0045), mats["graphite"], segs=24, loc=(x, y, surf(x) - 0.0016), parent=grp)
+             for i, (x, y) in enumerate(((-0.026, 0.014), (-0.026, -0.014), (0.0, 0.017), (0.0, -0.017)))]
+    C.fit += [body, mouth, window] + holes
+    C.ground.append(body)
+    win = world_pt(grp, (0.034, 0, surf(0.034) + 0.002))
+    C.glow(add_glow(clay, local_pt(body, win), 0.025), gain=2.0)
+    # breath: puffs leaving the window, looping a whole number of times over the clip
+    pm = bpy.data.materials.new("puff")
+    pm.use_nodes = True
+    nt = pm.node_tree
+    nt.nodes.clear()
+    out, mix = nt.nodes.new("ShaderNodeOutputMaterial"), nt.nodes.new("ShaderNodeMixShader")
+    tr, em, env = nt.nodes.new("ShaderNodeBsdfTransparent"), nt.nodes.new("ShaderNodeEmission"), nt.nodes.new("ShaderNodeValue")
+    em.inputs["Color"].default_value = bb.hex_rgba(ORANGE)
+    mix.inputs[0].default_value = 0.45
+    nt.links.new(tr.outputs[0], mix.inputs[1])
+    nt.links.new(em.outputs[0], mix.inputs[2])
+    nt.links.new(env.outputs[0], em.inputs["Strength"])
+    nt.links.new(mix.outputs[0], out.inputs[0])
+    C.glow(env, gain=2.5, power=1.0)
+    k = max(1, round(C.env["dur"] * 1.6))
+    up = (UP * 1.0 - CH * 0.25 - RIGHT * 0.15).normalized()
+    side = up.cross(CH).normalized()
+    top = finish("puff_top", _sphere_me("puff_top", 0.01), None, loc=win + up * 0.11, sharp=None)
+    top.hide_render = True
+    C.fit.append(top)
+    for i in range(9):
+        pf = finish(f"puff{i}", _sphere_me(f"puff{i}", 0.0065, 20), pm, loc=win, sharp=None)
+        def tr_(f, pf=pf, i=i):
+            p = (k * f / C.n + i / 9) % 1.0
+            pf.location = win + up * (0.11 * p) + side * (0.010 * math.sin(TAU * (p * 1.3 + i * 0.37)))
+            s = (0.4 + 1.3 * p) * math.sin(math.pi * p) ** 0.6
+            pf.scale = (s, s, s)
+            pf.keyframe_insert("location", frame=f)
+            pf.keyframe_insert("scale", frame=f)
+        C.tracks.append(tr_)
+    C.shiver(grp, UP, 0.0005, 5.5)
+
+
+def build_glockenspiel(C, mats):
+    nickel = mat("nickel", "#D3D3CF", 0.16, 1.0)
+    base, post = display_stand(C, mats, 0.50, base_r=0.10)
+    d = -RIGHT
+    E = Vector((0, 0, 0.495)) + d * 0.075
+    arm = rod("arm", (0, 0, 0.495), E + d * 0.006, 0.0055, mats["graphite_metal"], kind="cyl")
+    knob = sphere("arm_end", 0.008, mats["graphite_metal"], loc=E + d * 0.008)
+    tg = empty("tube_pivot", E)
+    zt = E.z - 0.03
+    cord = rod("cord", E, Vector((E.x, E.y, zt + 0.004)), 0.0012, mats["graphite"], kind="cyl")
+    capm, tubem = nickel.copy(), nickel.copy()
+    cap = lathe("tube_cap", tube_prof(0.012, 0.0178, 0.010), capm, segs=64, loc=(E.x, E.y, zt - 0.012))
+    tube = lathe("bell_tube", tube_prof(0.26, 0.016, 0.0145), tubem, segs=64, loc=(E.x, E.y, zt - 0.27))
+    for o in (cord, cap, tube): keep_parent(o, tg)
+    C.fit += [arm, knob, cap, tube]
+    md = flat_dir(FROM_BEHIND)
+    hit = Vector((E.x, E.y, zt)) + md * 0.0165
+    n = (md + UP).normalized()
+    C.glow(add_glow(capm, local_pt(cap, hit), 0.03), gain=2.6)
+    C.glow(add_glow(tubem, local_pt(tube, hit), 0.07), gain=2.2)
+    C.wobble(tg, 3.0, 1.15, power=1.0)
+    mallet(C, mats, "mallet", hit, (0.30, 0.75, 0.45), length=0.24, head_r=0.012, head_mat=mats["orange"], angle=12,
+           contact_normal=n)
+
+
+def build_strumstick(C, mats):
+    walnut = grain(mat("walnut", "#6E4A33", 0.4, coat=0.4), "#76503A", "#56392A", scale=16, along="Y", across="X", bump=0.01)
+    spruce = grain(mat("st_top", "#D6BC8E", 0.45, coat=0.4), "#DCC398", "#C2A577", scale=26, along="Y", across="X", bump=0.005)
+    nd = (BACK * 0.75 + RIGHT * 0.66).normalized()
+    grp = set_quat(empty("strumstick"), Quaternion((0, 0, 1), math.atan2(nd.y, nd.x) - math.pi / 2))
+    body = lathe("st_body", [(0, 0), (0.075, 0), (0.080, 0.006), (0.080, 0.052), (0.075, 0.058), (0, 0.058)], walnut, segs=64, parent=grp)
+    body.scale = (1, 1.55, 1)
+    topp = lathe("st_top", cyl_prof(0.002, 0.075, bevel=0.001), spruce, segs=64, loc=(0, 0, 0.0575), parent=grp)
+    topp.scale = (1, 1.55, 1)
+    holes = [lathe(f"st_hole{s}", cyl_prof(0.0008, 0.011), mats["graphite"], segs=32, loc=(s * 0.045, 0.0, 0.0595), parent=grp)
+             for s in (-1, 1)]
+    neck = box("st_neck", (0.034, 0.56, 0.018), walnut, bevel=0.003, loc=(0, 0.34, 0.068), parent=grp)
+    head_ = box("st_head", (0.05, 0.10, 0.016), walnut, bevel=0.004, loc=(0, 0.675, 0.067), parent=grp)
+    nut = box("st_nut", (0.034, 0.004, 0.004), mats["head"], bevel=0.0008, loc=(0, 0.622, 0.079), parent=grp)
+    bridge = box("st_bridge", (0.05, 0.008, 0.008), walnut, bevel=0.0015, loc=(0, -0.09, 0.0635), parent=grp)
+    parts = [body, topp, neck, head_, nut, bridge] + holes
+    for i, sx in enumerate((-1, 0, 1)):
+        parts.append(rod(f"peg{i}", (0.024, 0.64 + i * 0.03, 0.067), (0.045, 0.64 + i * 0.03, 0.067), 0.003, mats["chrome"], kind="cyl", parent=grp))
+        parts.append(box(f"pegh{i}", (0.006, 0.016, 0.012), mats["graphite"], bevel=0.002, loc=(0.048, 0.64 + i * 0.03, 0.067), parent=grp))
+    for k_, st in enumerate((2, 4, 5, 7, 9, 10, 12, 14, 16, 17)):
+        y = 0.62 - 0.71 * (1 - 2 ** (-st / 12))
+        parts.append(rod(f"fret{k_}", (-0.016, y, 0.0775), (0.016, y, 0.0775), 0.0009, mats["chrome"], kind="cyl", parent=grp, segs=8))
+    pl = None
+    for i, x in enumerate((-0.008, 0.0, 0.008)):
+        m = mats["steel"] if i != 1 else mats["steel"].copy()
+        s = rod(f"st_str{i}", (x, -0.09, 0.0685), (x, 0.622, 0.0815), 0.0007, m, kind="cyl", mids=40 if i == 1 else 0, parent=grp, segs=8)
+        parts.append(s)
+        if i == 1: pl = s
+    shape(pl, "bow", lambda co: (0.0025 * math.sin(math.pi * min(1, max(0, (co.y + 0.09) / 0.712))), 0, 0))
+    C.ring(pl.data.shape_keys.key_blocks["bow"], 11.0, power=1.1)
+    hit_l = Vector((0, -0.02, 0.0685 + (0.07 / 0.712) * 0.013))
+    C.glow(add_glow(pl.data.materials[0], hit_l, 0.12), gain=4.0)
+    C.fit += parts
+    C.ground.append(body)
+    hit = world_pt(grp, hit_l + Vector((0, 0, 0.0007)))
+    u = (FROM_BEHIND + UP * 0.6).normalized()
+    pick = lathe("pick", cyl_prof(0.0012, 0.013, bevel=0.0004), mats["orange"], segs=3, sharp=None)
+    pick.location = hit + u * 0.012
+    set_quat(pick, quat_to(u.cross(RIGHT)))
+    piv = empty("pick_pivot", hit + u * 0.06)
+    keep_parent(pick, piv)
+    C.fit.append(pick)
+    C.lift(piv, RIGHT, -14.0, RIGHT * 0.008 + UP * 0.012)
+
+
+def build_kick(C, mats):
+    wrap = mat("kick_wrap", "#2E2E33", 0.25, coat=0.6, coat_rough=0.08)
+    hoopw = grain(mat("hoop_wood", "#B88A5A", 0.35, coat=0.4), "#BF9060", "#9C7046", scale=12, along="Z", across="X")
+    R, H = 0.28, 0.40
+    n = (Quaternion((0, 0, 1), math.radians(50)) @ CH).normalized()
+    q = quat_to(n)
+    grp = set_quat(empty("kick", (0, 0, R + 0.014)), q)
+    lu = q.inverted() @ UP
+    hit_xy = (lu.x * 0.05, lu.y * 0.05)
+    hd, zh = drum(C, mats, "kick", R, H, wrap, hoopw, mats["chrome"], hit_xy, lugs=10, z0=-(H / 2 + 0.01), hoop_h=0.035,
+                  grp=grp, depth=0.012, wood_hoops=True)
+    reso = lathe("kick_reso", cyl_prof(0.002, R - 0.002, bevel=0.0005), mats["graphite"], segs=96, loc=(0, 0, -(H / 2) + 0.004), parent=grp)
+    C.fit.append(reso)
+    C.ground += [bpy.data.objects["kick_hoop_bot"], bpy.data.objects["kick_hoop_top"]]
+    contact = world_pt(grp, (hit_xy[0], hit_xy[1], zh))
+    C.drum_head(hd, hz=4.5, hz2=3.6, push=1.6)
+    C.glow(add_glow(hd.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.10), gain=2.2)
+    hr = 0.032
+    A = Vector((contact.x, contact.y, 0.09)) + n * 0.13
+    ax = n.cross(UP).normalized()
+    Hc = contact + n * hr
+    piv = empty("beater_pivot", A)
+    bh = sphere("beater", hr, mats["yarn"], loc=Hc)
+    sh = rod("beater_shaft", A, Hc, 0.0045, mats["chrome"], kind="cyl")
+    hub = rod("beater_hub", A - ax * 0.02, A + ax * 0.02, 0.009, mats["graphite_metal"], kind="cyl")
+    for o in (bh, sh, hub): keep_parent(o, piv)
+    for s_ in (-1, 1):
+        C.fit.append(rod(f"pedal_post{s_}", A + ax * 0.04 * s_ - Vector((0, 0, A.z - 0.012)), A + ax * 0.04 * s_, 0.006,
+                         mats["graphite_metal"], kind="cyl"))
+    fb = box("footboard", (0.09, 0.26, 0.014), mats["graphite"], bevel=0.003,
+             loc=Vector((A.x, A.y, 0.007)) + n * 0.12, rot=(0, 0, math.atan2(n.y, n.x) - math.pi / 2))
+    C.ground.append(fb)
+    C.fit += [bh, fb, hub]
+    C.stick_lift(piv, n, contact, 34.0, 0.0)
+
+
+def build_hihat(C, mats):
+    R = 0.178
+    k = R / 0.215
+    bh = 0.040 * k
+    ze = 0.20
+    display_stand(C, mats, ze + 0.065, base_r=0.10)
+    top_m = lathe_marks(mat("hat_top", "#C49C62", 0.24, 1.0))
+    bot_m = lathe_marks(mat("hat_bot", "#BE965C", 0.26, 1.0))
+    bot = cymbal_mesh("hat_bottom", R, bot_m, loc=(0, 0, ze - bh), rot=(math.pi, 0, 0))
+    tp = empty("hat_pivot", (0, 0, ze + bh + 0.0012))
+    top = cymbal_mesh("hat_top", R, top_m, parent=tp)
+    clutch = lathe("clutch", cyl_prof(0.026, 0.011), mats["graphite_metal"], segs=24, loc=(0, 0, 0.004), parent=tp)
+    pull = lathe("pull_rod", cyl_prof(0.10, 0.0042), mats["chrome"], segs=16, loc=(0, 0, 0.02), parent=tp)
+    felt = lathe("hat_felt", cyl_prof(0.008, 0.015), mats["felt"], segs=24, loc=(0, 0, ze - bh - 0.009))
+    C.fit += [bot, top, clutch, felt, pull]
+    d = flat_dir(RIGHT * 0.8 + BACK * 0.5)
+    r = 0.62 * R
+    hit_l = Vector((d.x * r, d.y * r, cym_top_z(R, r)))
+    hit = world_pt(tp, hit_l)
+    C.glow(add_glow(top_m, hit_l, 0.06), gain=2.6)
+    C.wobble(tp, 1.6, 7.0)
+    C.shiver(bot, UP, 0.0005, 15.0)
+    stick(C, mats, "stick", hit, FROM_BEHIND, angle=8)
+
+
+def build_clap(C, mats):
+    c = Vector((0, 0, 0.17))
+    ax = (RIGHT * 0.75 + CH * 0.66).normalized()
+    f = (UP + (UP.cross(ax)) * 0.25).normalized()
+    a = place_hand(C, mats, "hand_r", c + ax * 0.0005, -ax, f, lift_deg=12, rise=0.05, curl=(8, 10, 8), fit="all")
+    b = place_hand(C, mats, "hand_l", c - ax * 0.0005, ax, f, mirror=True, lift_deg=12, rise=0.05, curl=(8, 10, 8), fit="all")
+    for h in (a, b):
+        C.glow(add_glow(h["palm_obj"].data.materials[0], h["palm"], 0.055), gain=2.2)
+
+
+def build_shaker(C, mats):
+    shell = mat("shaker_shell", "#EEE9DD", 0.35, alpha=0.40, coat=0.3)
+    prof = [(0, -0.030), (0.012, -0.0285), (0.019, -0.023), (0.0215, -0.012), (0.0215, 0.0), (0.020, 0.010),
+            (0.016, 0.020), (0.009, 0.027), (0, 0.030)]
+    ax = (UP * 0.85 + RIGHT * 0.5).normalized()
+    grp = set_quat(empty("egg", (0, 0, 0.075)), quat_to(ax))
+    fine = [(0.0215 * math.sin(math.pi * i / 24) * (1 - 0.12 * math.cos(math.pi * i / 24)), -0.030 * math.cos(math.pi * i / 24)) for i in range(25)]
+    egg = lathe("egg", fine, shell, segs=64, parent=grp, sharp=None)
+    C.fit.append(egg)
+    bead = mats["orange"].copy()
+    uniform_glow(C, bead, gain=1.4)
+    rr = lambda z: next((r0 + (r1 - r0) * (z - z0) / (z1 - z0) for (r0, z0), (r1, z1) in zip(prof, prof[1:]) if z0 <= z <= z1), 0)
+    rng = C.rng
+    for i in range(22):
+        z = rng.uniform(-0.024, -0.012)
+        lim = max(0.002, rr(z) - 0.0055)
+        a_, rad = rng.uniform(0, TAU), lim * math.sqrt(rng.random())
+        rest = Vector((rad * math.cos(a_), rad * math.sin(a_), z))
+        fly = Vector((rng.uniform(-0.006, 0.006), rng.uniform(-0.006, 0.006), rng.uniform(0.012, 0.030)))
+        b = sphere(f"bead{i}", 0.0032, bead, loc=rest, parent=grp, segs=12)
+        def tr_(f, b=b, rest=rest, fly=fly):
+            p = rest + fly * C.L[f]
+            lim2 = max(0.0, rr(p.z) - 0.0045)
+            h = math.hypot(p.x, p.y)
+            if h > lim2 and h > 0: p.x, p.y = p.x * lim2 / h, p.y * lim2 / h
+            b.location = p
+            b.keyframe_insert("location", frame=f)
+        C.tracks.append(tr_)
+    C.lift(grp, (1, 0, 0), 0.0, ax * 0.02)
+
+
+def build_tambourine(C, mats):
+    wood = grain(mat("tamb_wood", "#C69A68", 0.45, coat=0.35), "#CDA16F", "#AE8250", scale=14, along="Z", across="X", bump=0.01)
+    brass = mat("jingle", "#CBA862", 0.2, 1.0)
+    uniform_glow(C, brass, gain=1.2)
+    R, h, w = 0.125, 0.046, 0.008
+    nrm = (UP * math.cos(math.radians(30)) + CH * math.sin(math.radians(30))).normalized()
+    q = quat_to(nrm)
+    grp = set_quat(empty("tambourine"), q)
+    band = 0.012
+    parts = [lathe("tb_low", tube_prof(band, R, R - w), wood, segs=96, closed=True, parent=grp),
+             lathe("tb_high", tube_prof(band, R, R - w), wood, segs=96, closed=True, loc=(0, 0, h - band), parent=grp)]
+    slot = math.radians(24)
+    mid = [(R - w, band), (R, band), (R, h - band), (R - w, h - band)][::-1]
+    for i in range(5):
+        a0 = TAU * i / 5 + slot / 2
+        a1 = TAU * (i + 1) / 5 - slot / 2
+        parts.append(lathe(f"tb_mid{i}", mid, wood, segs=16, closed=True, arc=(a0, a1), parent=grp))
+    hit_xy = (0.01, -0.02)
+    hd = head("tb_head", R - 0.002, mats["rawhide"].copy(), hit_xy, depth=0.004, parent=grp, loc=(0, 0, h + 0.0008))
+    parts.append(hd)
+    disk = [(0, 0.0016), (0.022, 0.0003), (0.025, -0.0004), (0.022, -0.0009), (0, 0.0005)]
+    for i in range(5):
+        a = TAU * (i + 0.5) / 5
+        rr_ = R - w / 2
+        x, y = rr_ * math.cos(a), rr_ * math.sin(a)
+        parts.append(rod(f"jpin{i}", (x, y, band), (x, y, h - band), 0.0011, mats["chrome"], kind="cyl", parent=grp, segs=8))
+        for j, dz in enumerate((-0.0028, 0.0028)):
+            jg = lathe(f"jingle{i}{j}", disk if dz > 0 else [(r_, -z_) for r_, z_ in disk][::-1], brass, segs=32, closed=False,
+                       loc=(x, y, h / 2 + dz), parent=grp)
+            ph, hz = C.rng.uniform(0, TAU), C.rng.uniform(11, 17)
+            C.shiver(jg, (0, 0, 1), 0.0022, hz, phase=ph)
+            C.wobble(jg, 7.0, hz * 0.8, phase=ph)
+    C.fit += parts
+    bpy.context.view_layer.update()
+    dl = q.inverted() @ DOWN
+    dl = Vector((dl.x, dl.y, 0)).normalized()
+    low = q @ (dl * (R + 0.004))
+    rod_top = 0.16
+    grp.location = Vector((0, 0, rod_top)) - low
+    display_stand(C, mats, rod_top, base_r=0.09)
+    clamp = box("tb_clamp", (0.02, 0.02, 0.03), mats["graphite_metal"], bevel=0.003, loc=(0, 0, rod_top + 0.004))
+    C.fit.append(clamp)
+    contact = world_pt(grp, (hit_xy[0], hit_xy[1], h + 0.0008))
+    C.drum_head(hd, hz=6.0, hz2=4.4, push=1.0)
+    C.glow(add_glow(hd.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.07), gain=2.0)
+    fingers = (CH - nrm * CH.dot(nrm)).normalized()
+    place_hand(C, mats, "hand", contact, -nrm, fingers, lift_deg=14, rise=0.035)
+    C.wobble(grp, 2.5, 4.0, power=1.2)
+
+
+def build_cajon(C, mats):
+    birch = grain(mat("birch", "#D9C4A0", 0.5, coat=0.2), "#DDC8A5", "#C7AE86", scale=12, along="Z", across="X", bump=0.01)
+    tapa_m = grain(mat("tapa", "#6E4C36", 0.4, coat=0.3), "#76523A", "#57392A", scale=18, along="Z", across="Y", bump=0.01)
+    D, W, H = 0.30, 0.30, 0.48
+    n = (Quaternion((0, 0, 1), math.radians(24)) @ CH).normalized()
+    grp = set_quat(empty("cajon"), Quaternion((0, 0, 1), math.atan2(n.y, n.x)))
+    body = box("cajon_body", (D, W, H), birch, bevel=0.006, seg=3, loc=(0, 0, H / 2 + 0.008), parent=grp)
+    feet = [lathe(f"cfoot{i}", cyl_prof(0.008, 0.012), mats["rubber"], segs=16, loc=(sx * 0.12, sy * 0.12, 0), parent=grp)
+            for i, (sx, sy) in enumerate(((1, 1), (1, -1), (-1, 1), (-1, -1)))]
+    tapa = finish("tapa", grid_mesh("tapa", 0.47, 0.294, 28, 18), tapa_m, loc=(D / 2 + 0.0025, 0, 0.008 + H / 2),
+                  rot=(0, math.radians(90), 0), parent=grp, sharp=None)
+    edge = box("tapa_edge", (0.004, 0.296, 0.472), tapa_m, bevel=0.001, loc=(D / 2 + 0.0005, 0, 0.008 + H / 2), parent=grp)
+    screws = [lathe(f"cscrew{i}", cyl_prof(0.0015, 0.003), mats["chrome"], segs=12, loc=(D / 2 + 0.003, sy * 0.135, z),
+                    rot=(0, math.radians(90), 0), parent=grp)
+              for i, (sy, z) in enumerate(((1, 0.03), (-1, 0.03), (1, 0.25), (-1, 0.25), (1, 0.47), (-1, 0.47)))]
+    C.fit += [body, tapa, edge] + feet
+    C.ground += feet
+    hz_ = 0.40
+    hx = (0.008 + H / 2) - hz_
+    shape(tapa, "dent", lambda co: (0, 0, -0.006 * math.exp(-((co.x - hx) ** 2 + co.y ** 2) / (2 * 0.07 ** 2))
+                                    * max(0, 1 - (2 * co.y / 0.294) ** 4) * max(0, 1 - (2 * co.x / 0.47) ** 4)))
+    kb = tapa.data.shape_keys.key_blocks["dent"]
+    C.key(kb, lambda f: math.exp(-f / 1.4) * 0.8 + 0.35 * C.e[f] ** 1.3 * math.sin(TAU * 9 * C.t(f)))
+    C.glow(add_glow(tapa_m, (hx, 0, 0), 0.07), gain=2.2)
+    contact = world_pt(tapa, (hx, 0, 0.001))
+    place_hand(C, mats, "hand", contact, -n, DOWN + n * 0.15, lift_deg=18, rise=0.03)
+
+
+def build_conga(C, mats):
+    wood = grain(mat("conga_wood", "#9C6438", 0.35, coat=0.5, coat_rough=0.1), "#A56B3D", "#7E4C28", scale=14, along="Z", across="X", bump=0.01)
+    outer = [(0.112, 0.0), (0.128, 0.08), (0.145, 0.20), (0.150, 0.32), (0.145, 0.45), (0.136, 0.58), (0.131, 0.66), (0.130, 0.70)]
+    shell = lathe("conga_shell", outer + [(r - 0.010, z) for r, z in reversed(outer)], wood, segs=96, closed=True, sharp=70)
+    ring = lathe("conga_foot", tube_prof(0.02, 0.116, 0.104), mats["rubber"], segs=64, closed=True)
+    crown = lathe("conga_crown", [(0.127, 0.692), (0.137, 0.692), (0.139, 0.700), (0.139, 0.712), (0.133, 0.716), (0.127, 0.716)],
+                  mats["chrome"], segs=96, closed=True)
+    d = flat_dir(BACK * 0.85 + RIGHT * 0.3)
+    hit_xy = (d.x * 0.06, d.y * 0.06)
+    hd = head("conga_head", 0.128, mats["rawhide"].copy(), hit_xy, depth=0.007, loc=(0, 0, 0.707))
+    parts = [shell, ring, crown, hd]
+    for i in range(6):
+        a = TAU * (i + 0.5) / 6
+        c, s = math.cos(a), math.sin(a)
+        parts.append(box(f"cplate{i}", (0.008, 0.02, 0.05), mats["chrome"], bevel=0.002, loc=(c * 0.137, s * 0.137, 0.565), rot=(0, 0, a)))
+        parts.append(rod(f"crod{i}", (c * 0.143, s * 0.143, 0.585), (c * 0.143, s * 0.143, 0.718), 0.003, mats["chrome"], kind="cyl"))
+        parts.append(box(f"cear{i}", (0.014, 0.012, 0.008), mats["chrome"], bevel=0.002, loc=(c * 0.140, s * 0.140, 0.714), rot=(0, 0, a)))
+    C.fit += parts
+    C.ground.append(ring)
+    C.drum_head(hd, hz=5.5, hz2=4.1)
+    C.glow(add_glow(hd.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.07), gain=2.2)
+    contact = Vector((hit_xy[0], hit_xy[1], 0.707 + 0.0005))
+    place_hand(C, mats, "hand", contact, DOWN, -d + CH * 0.3, lift_deg=20, rise=0.035, curl=(4, 6, 4))
+
+
+def build_bongo(C, mats):
+    wood = grain(mat("bongo_wood", "#B07440", 0.35, coat=0.5, coat_rough=0.1), "#B97B45", "#93602F", scale=14, along="Z", across="X", bump=0.01)
+    parts, heads = [], {}
+    for name, R, off in (("macho", 0.090, -0.108), ("hembra", 0.110, 0.125)):
+        o = RIGHT * off
+        prof = [(R * 0.78, 0.0), (R * 0.86, 0.06), (R * 0.95, 0.12), (R, 0.15)]
+        parts.append(lathe(f"{name}_shell", prof + [(r - 0.008, z) for r, z in reversed(prof)], wood, segs=80, closed=True,
+                           loc=(o.x, o.y, 0), sharp=70))
+        parts.append(lathe(f"{name}_hoop", [(R - 0.002, 0.146), (R + 0.008, 0.146), (R + 0.009, 0.150), (R + 0.009, 0.162),
+                                            (R + 0.006, 0.165), (R - 0.002, 0.165)], mats["chrome"], segs=80, closed=True, loc=(o.x, o.y, 0)))
+        heads[name] = (head(f"{name}_head", R - 0.001, mats["rawhide"].copy(), (0, 0), depth=0.004, loc=(o.x, o.y, 0.158)), o, R)
+        for i in range(4):
+            a = TAU * (i + 0.5) / 4
+            c, s = math.cos(a), math.sin(a)
+            parts.append(rod(f"{name}_rod{i}", (o.x + c * (R + 0.012), o.y + s * (R + 0.012), 0.165),
+                             (o.x + c * (R * 0.9 + 0.012), o.y + s * (R * 0.9 + 0.012), 0.07), 0.003, mats["chrome"], kind="cyl"))
+            parts.append(box(f"{name}_ear{i}", (0.016, 0.012, 0.012), mats["chrome"], bevel=0.002,
+                             loc=(o.x + c * (R * 0.88 + 0.006), o.y + s * (R * 0.88 + 0.006), 0.066), rot=(0, 0, a)))
+    bridge = box("bongo_bridge", (0.05, 0.05, 0.05), wood, bevel=0.005, loc=RIGHT * 0.006 + Vector((0, 0, 0.07)),
+                 rot=(0, 0, math.atan2(RIGHT.y, RIGHT.x)))
+    C.fit += parts + [bridge] + [h[0] for h in heads.values()]
+    C.ground += [bpy.data.objects["macho_shell"], bpy.data.objects["hembra_shell"]]
+    hd, o, R = heads["macho"]
+    d = flat_dir(BACK * 0.9 + RIGHT * 0.2)
+    hit_xy = (d.x * R * 0.62, d.y * R * 0.62)
+    # rebuild the push key at the strike point (the head was made centred)
+    hd.shape_key_clear()
+    hd2 = head("macho_head_s", R - 0.001, hd.data.materials[0], hit_xy, depth=0.004, loc=(o.x, o.y, 0.158))
+    C.fit.remove(hd)
+    bpy.data.objects.remove(hd)
+    C.fit.append(hd2)
+    C.drum_head(hd2, hz=9.0, hz2=7.0)
+    C.glow(add_glow(hd2.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.045), gain=2.4)
+    hh, _, _ = heads["hembra"]
+    contact = Vector((o.x + hit_xy[0], o.y + hit_xy[1], 0.158 + 0.0005))
+    t = math.radians(28)
+    f = -d * math.cos(t) + DOWN * math.sin(t)
+    n = DOWN * math.cos(t) + d * math.sin(t)
+    place_hand(C, mats, "hand", contact, n, f, at="tip", lift_deg=16, rise=0.02, curl=(12, 14, 10))
+
+
+def build_tom(C, mats):
+    walnut = grain(mat("tom_wood", "#5C3D2A", 0.3, coat=0.6, coat_rough=0.08), "#654430", "#47301F", scale=10, along="Z", across="X", bump=0.005)
+    R, H = 0.152, 0.20
+    nrm = (UP * math.cos(math.radians(14)) + CH * math.sin(math.radians(14))).normalized()
+    q = quat_to(nrm)
+    P = Vector((0, 0, 0.14))
+    grp = set_quat(empty("tom", P), q)
+    bl = q.inverted() @ BACK
+    hit_xy = (bl.x * 0.05, bl.y * 0.05)
+    hd, zh = drum(C, mats, "tom", R, H, walnut, mats["chrome"], mats["chrome"], hit_xy, lugs=6, grp=grp)
+    display_stand(C, mats, P.z - 0.004, base_r=0.10, rod_r=0.008)
+    mount = box("tom_mount", (0.03, 0.03, 0.02), mats["chrome"], bevel=0.003, loc=P + Vector((0, 0, 0.004)))
+    C.fit.append(mount)
+    C.drum_head(hd, hz=6.5, hz2=5.0)
+    C.glow(add_glow(hd.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.06), gain=2.2)
+    hit = world_pt(grp, (hit_xy[0], hit_xy[1], zh))
+    stick(C, mats, "stick", hit, FROM_BEHIND, contact_normal=nrm, angle=12)
+
+
+def build_cowbell(C, mats):
+    paint = mat("cowbell_paint", "#2B2B30", 0.45, 0.4)
+    m_dir = (CH * 0.6 - RIGHT * 0.8).normalized()
+    c = Vector((0, 0, 0.17))
+    grp = set_quat(empty("cowbell", c), Quaternion((0, 0, 1), math.atan2(m_dir.y, m_dir.x)))
+    bm = bmesh.new()
+    mouth = [(0.085, sy * 0.050, sz * 0.032) for sy, sz in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
+    back = [(-0.085, sy * 0.028, sz * 0.020) for sy, sz in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
+    vm, vb = [bm.verts.new(v) for v in mouth], [bm.verts.new(v) for v in back]
+    for i in range(4): bm.faces.new((vb[i], vb[(i + 1) % 4], vm[(i + 1) % 4], vm[i]))
+    bm.faces.new(vb[::-1])
+    bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if abs(e.verts[0].co.x - e.verts[1].co.x) > 1e-6], cuts=6, use_grid_fill=True)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("cowbell")
+    bm.to_mesh(me)
+    bm.free()
+    bell = finish("cowbell", me, paint.copy(), parent=grp, sharp=30)
+    bb.modifier(bell, "SOLIDIFY", thickness=0.002, offset=-1)
+    bb.modifier(bell, "BEVEL", width=0.0025, segments=3, limit_method="ANGLE")
+    lip = [rod(f"lip{i}", Vector(mouth[i]) * 1.0, Vector(mouth[(i + 1) % 4]), 0.0022, mats["chrome"], kind="capsule", parent=grp)
+           for i in range(4)]
+    clampb = box("cb_clamp", (0.03, 0.03, 0.03), mats["chrome"], bevel=0.003, loc=(-0.10, 0, -0.005), parent=grp)
+    arm = rod("cb_arm", (-0.10, 0, -0.005), (-0.085, 0, -0.005), 0.005, mats["chrome"], kind="cyl", parent=grp)
+    sx = c - m_dir * 0.10
+    display_stand(C, mats, c.z - 0.02, base_r=0.09, xy=(sx.x, sx.y))
+    C.fit += [bell, clampb, arm] + lip
+    hit_l = Vector((0.05, 0, 0.020 + (0.05 + 0.085) / 0.17 * 0.012 + 0.0005))
+    hit = world_pt(grp, hit_l)
+    C.glow(add_glow(bell.data.materials[0], hit_l, 0.045), gain=2.6)
+    C.wobble(grp, 1.5, 9.0)
+    stick(C, mats, "stick", hit, FROM_BEHIND, angle=6)
+
+
+def build_claves(C, mats):
+    rose = grain(mat("clave_wood", "#6E3D2E", 0.35, coat=0.4), "#7A4634", "#55301F", scale=16, along="Z", across="X", bump=0.01)
+    r, L = 0.0125, 0.20
+    a = (RIGHT * 0.9 + BACK * 0.4).normalized()
+    c = Vector((0, 0, 0.030 + r))
+    bot = rod("clave_bottom", c - a * (L / 2 - r), c + a * (L / 2 - r), r, rose.copy(), mids=4)
+    cradles = [box(f"cradle{s}", (0.03, 0.035, 0.03), mats["graphite"], bevel=0.004, loc=c - a * 0.065 * s - Vector((0, 0, c.z - 0.015)),
+                   rot=(0, 0, math.atan2(a.y, a.x))) for s in (-1, 1)]
+    b = flat_dir(UP.cross(a))
+    if b.dot(BACK) < 0: b = -b
+    u = (b + UP * 0.35).normalized()
+    contact = c + UP * (2 * r)
+    top = rod("clave_top", contact - u * (L / 2 - r), contact + u * (L / 2 - r), r, rose.copy(), mids=4)
+    piv = empty("clave_pivot", contact + u * (L / 2))
+    keep_parent(top, piv)
+    C.fit += [bot, top] + cradles
+    C.ground += cradles
+    C.glow(add_glow(bot.data.materials[0], local_pt(bot, c + UP * r), 0.04), gain=2.4)
+    C.glow(add_glow(top.data.materials[0], local_pt(top, contact - UP * r), 0.04), gain=2.4)
+    C.shiver(bot, UP, 0.0006, 16.0)
+    C.stick_lift(piv, UP, contact, 7.0, 0.004)
+
+
+def build_woodblock(C, mats):
+    teak = grain(mat("block_wood", "#A8764A", 0.45, coat=0.3), "#B07E50", "#8C5F38", scale=14, along="X", across="Y", bump=0.015)
+    L, W, H = 0.20, 0.07, 0.06
+    a = (RIGHT * 0.85 + BACK * 0.5).normalized()
+    grp = set_quat(empty("woodblock"), Quaternion((0, 0, 1), math.atan2(a.y, a.x)))
+    block = box("block", (L, W, H), teak, bevel=0.005, seg=3, loc=(0, 0, 0.008 + H / 2), parent=grp)
+    felts = [box(f"wfelt{s}", (0.014, W * 0.9, 0.008), mats["graphite"], bevel=0.002, loc=(s * 0.06, 0, 0.004), parent=grp) for s in (-1, 1)]
+    slots = [box(f"slot{s}", (L * 0.82, 0.004, 0.008), mats["graphite"], bevel=0.001, loc=(0, s * (W / 2 - 0.0012), 0.008 + H * 0.70), parent=grp)
+             for s in (-1, 1)]
+    C.fit += [block] + felts + slots
+    C.ground += felts
+    hit = world_pt(grp, (0.02, 0, 0.008 + H))
+    C.glow(add_glow(teak, local_pt(block, hit), 0.05), gain=2.4)
+    C.shiver(block, UP, 0.0007, 18.0)
+    stick(C, mats, "stick", hit, FROM_BEHIND, angle=6)
+
+
+def build_framedrum(C, mats):
+    wood = grain(mat("frame_wood", "#C4996A", 0.45, coat=0.35), "#CBA071", "#A97F52", scale=14, along="Z", across="X", bump=0.01)
+    R, h, w = 0.225, 0.065, 0.012
+    nrm = (UP * math.cos(math.radians(58)) + CH * math.sin(math.radians(58))).normalized()
+    q = quat_to(nrm)
+    grp = set_quat(empty("framedrum"), q)
+    bl = q.inverted() @ BACK
+    bl = Vector((bl.x, bl.y, 0)).normalized()
+    hit_xy = (bl.x * R * 0.70, bl.y * R * 0.70)
+    frame = lathe("fd_frame", tube_prof(h, R, R - w, 0.002), wood, segs=128, closed=True, parent=grp)
+    hd = head("fd_head", R - 0.001, mats["rawhide"].copy(), hit_xy, depth=0.010, parent=grp, loc=(0, 0, h + 0.0008))
+    C.fit += [frame, hd]
+    dl = q.inverted() @ DOWN
+    dl = Vector((dl.x, dl.y, 0)).normalized()
+    rod_top = 0.09
+    grp.location = Vector((0, 0, rod_top + 0.012)) - q @ (dl * R)
+    display_stand(C, mats, rod_top, base_r=0.10)
+    cradle = box("fd_cradle", (0.05, 0.03, 0.024), mats["graphite_metal"], bevel=0.003, loc=(0, 0, rod_top + 0.006),
+                 rot=(0, 0, math.atan2(RIGHT.y, RIGHT.x)))
+    C.fit.append(cradle)
+    C.drum_head(hd, hz=4.0, hz2=3.1, push=1.2)
+    C.glow(add_glow(hd.data.materials[0], (hit_xy[0], hit_xy[1], 0), 0.09), gain=2.2)
+    contact = world_pt(grp, (hit_xy[0], hit_xy[1], h + 0.0013))
+    fingers = -(q @ Vector((bl.x, bl.y, 0)))
+    place_hand(C, mats, "hand", contact, -nrm, fingers, lift_deg=16, rise=0.03, curl=(5, 6, 4))
 
 
 BUILD = {k[6:]: v for k, v in dict(globals()).items() if k.startswith("build_")}
@@ -740,6 +1536,11 @@ def studio(C, objs):
     wash.data.energy = 4 * looks.KEY_W_PER_M2 * (wash.location - target).length ** 2 * 0.5 * WASH
     bb.look_at(wash, target)
     bb.world("#ffffff", 0.22)
+    if bpy.context.scene.render.engine != "CYCLES":
+        kind = "SPHERE" if bpy.app.version >= (4, 1) else "CUBEMAP"
+        pr = link(bpy.data.objects.new("probe", bpy.data.lightprobes.new("probe", kind)))
+        pr.location = centre
+        pr.data.influence_distance = 6 * S
     return cam, sw, S
 
 
@@ -800,8 +1601,14 @@ def main():
         bb.views(os.path.join(out, "views.png"), n=5, objs=[o for o in C.fit if o.type in bb.GEOMETRY], size=300)
         sw.hide_render = False
     if a.frames == "all":
-        sc.render.filepath = os.path.join(out, "frames", "")
-        bpy.ops.render.render(animation=True)
+        # one still per frame: measured about 2 s a frame in EEVEE, where render(animation=True) took 20-36 s
+        import time
+        t0 = time.time()
+        os.makedirs(os.path.join(out, "frames"), exist_ok=True)
+        for f in range(C.n):
+            sc.frame_set(f)
+            bb.render(os.path.join(out, "frames", f"{f:04d}.png"))
+        info["render_s"] = round(time.time() - t0, 1)
     else:
         import sheetlib
         shots = []
